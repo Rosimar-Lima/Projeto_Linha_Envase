@@ -42,7 +42,7 @@ function criarGarrafa(posicaoInicial){
 
     const img = document.createElement("img");
 
-    img.src = "images/Garrafa_Vazia.png";
+    img.src = "images/garrafa vazia.png";
 
     containerGarrafa.appendChild(liquido);
     containerGarrafa.appendChild(img);
@@ -87,7 +87,7 @@ function iniciarEnvase(garrafa){
 
         garrafa.liquido.style.height = garrafa.nivel + "%";
 
-        if(garrafa.nivel >= 100){
+        if(garrafa.nivel >= 85){
             clearInterval(enchimento);
         
             garrafa.enchida = true;
