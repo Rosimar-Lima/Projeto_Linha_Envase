@@ -26,5 +26,3 @@ O objetivo é demonstrar conceitos de **JavaScript**, **HTML** e **CSS** aplicad
 - **JavaScript** – Lógica da simulação e controle dos elementos
 
 ---
-
-## 📂 Estrutura do Projeto
