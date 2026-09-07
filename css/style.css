@@ -22,16 +22,25 @@ body{
     background:#555;
 }
 
-#enchedora{
-    position:absolute;
-    left:400px;
-    top:40px;
 
+#estacoes{
+    position:absolute;
+    top:40px;
+    left:0;
+
+    width:100%;
+
+    display:flex;
+    justify-content:center;
+    gap:180px; /* espaço entre EV e ST */
+}
+
+#enchedora{
     width:150px;
     height:80px;
 
-    background:skyblue;
-    
+    background:rgb(0, 119, 255);
+
     display:flex;
     justify-content:center;
     align-items:center;
@@ -41,10 +50,6 @@ body{
 }
 
 #tampadora{
-    position:absolute;
-    left:800px;
-    top:40px;
-
     width:150px;
     height:80px;
 
@@ -57,7 +62,6 @@ body{
     text-align:center;
     font-weight:bold;
 }
-
 
 .garrafaContainer{
 

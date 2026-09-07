@@ -1,12 +1,25 @@
 let ligada = false;
 let garrafas = [];
 let producao = 0;
+let envaseConcluido = false;
+let tampagemConcluida =false;
 
 const container = document.getElementById("garrafas");
 const contador = document.getElementById("contador");
 
-const ESPACAMENTO = 140;
-const VELOCIDADE = 2;
+window.onload = () => {
+
+    const ev = document.getElementById("enchedora");
+    const st = document.getElementById("tampadora");
+
+};
+
+const POS_EV = 405;
+const POS_ST = 735;
+
+const ESPACAMENTO = 330;
+
+const VELOCIDADE = 5;
 
 // -------------------------
 // BOTÕES
@@ -69,11 +82,15 @@ function criarGarrafa(posicaoInicial){
     });
 }
 
+
+
 // -------------------------
 // ENVASE
 // -------------------------
 
 function iniciarEnvase(garrafa){
+    
+    console.log("EV", garrafa.posicao);
 
     ligada = false;
 
@@ -99,16 +116,22 @@ function iniciarEnvase(garrafa){
             console.log("ENVASE FINALIZADO");
 
             ligada = true;
+
+                       
+            
         }
 
     }, 60);
 }
+
+
 
 //-------------------------
 //TAMPAGEM    
 //-------------------------
 
 function iniciarTampagem(garrafa){
+    console.log("ST", garrafa.posicao);
     
     ligada = false;
 
@@ -128,7 +151,9 @@ function iniciarTampagem(garrafa){
 
         ligada = true;
 
-    }, 2000);
+    
+
+    }, 2600);
    }
 
 // -------------------------
@@ -136,6 +161,7 @@ function iniciarTampagem(garrafa){
 // -------------------------
 
 criarGarrafa(20);
+criarGarrafa(20 - ESPACAMENTO);
 
 // -------------------------
 // ANIMAÇÃO
@@ -150,8 +176,8 @@ function animar(){
             // Detecta chegada na EV
 
             if(
-                g.posicao >= 430 &&
-                g.posicao <= 435 &&
+                g.posicao >= POS_EV - 5 &&
+                g.posicao <= POS_EV &&
                 !g.enchendo &&
                 !g.enchida
             ){
@@ -178,8 +204,8 @@ function animar(){
             // Detecta chegada na ST
 
             if(
-                g.posicao >= 830 &&
-                g.posicao <= 835 &&
+                g.posicao >= POS_ST - 5 &&
+                g.posicao <= POS_ST &&
                 !g.tampando &&
                 g.enchida &&
                 !g.tampada
@@ -208,9 +234,11 @@ function animar(){
         const ultima =
             garrafas[garrafas.length - 1];
 
-        if(ultima.posicao > ESPACAMENTO){
+        if(ultima.posicao >=20){
 
-            criarGarrafa(-140);
+            criarGarrafa(
+                ultima.posicao - ESPACAMENTO);
+            
         }
 
         // Remove garrafas fora da tela
