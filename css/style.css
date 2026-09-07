@@ -39,7 +39,7 @@ body{
     width:150px;
     height:80px;
 
-    background:rgb(0, 119, 255);
+    background:limegreen;
 
     display:flex;
     justify-content:center;
@@ -53,7 +53,7 @@ body{
     width:150px;
     height:80px;
 
-    background:orange;
+    background:limegreen;
 
     display:flex;
     justify-content:center;
@@ -161,4 +161,28 @@ h2{
 
 #btnDesliga{
     background-image:url("../images/Botão_Desliga.png");
+}
+
+.operando{
+
+    background:yellow !important;
+
+    animation:piscando 0.6s infinite;
+
+}
+
+@keyframes piscando{
+
+    0%{
+        opacity:1;
+    }
+
+    50%{
+        opacity:0.3;
+    }
+
+    100%{
+        opacity:1;
+    }
+
 }

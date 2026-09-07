@@ -95,7 +95,7 @@ function iniciarEnvase(garrafa){
     ligada = false;
 
     document.getElementById("enchedora")
-        .style.background = "limegreen";
+        .classList.add("operando");
 
     console.log("ENVASE INICIADO");
 
@@ -111,7 +111,7 @@ function iniciarEnvase(garrafa){
             garrafa.enchendo = false;
 
             document.getElementById("enchedora")
-                .style.background = "skyblue";
+                .classList.remove("operando");
 
             console.log("ENVASE FINALIZADO");
 
@@ -136,7 +136,7 @@ function iniciarTampagem(garrafa){
     ligada = false;
 
     document.getElementById("tampadora")
-        .style.background = "red";
+        .classList.add("operando");
 
     console.log("TAMPAGEM INICIADA");
     
@@ -145,7 +145,7 @@ function iniciarTampagem(garrafa){
         garrafa.tampando = false;
 
         document.getElementById("tampadora")
-            .style.background = "orange";
+            .classList.remove("operando");
 
         console.log("TAMPAGEM FINALIZADA");
 
