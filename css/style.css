@@ -119,3 +119,46 @@ body{
     width:100%;
     height:100%;
 }
+
+h1{
+    margin-top: 10ppx;
+    margin-bottom:10px;
+}
+
+h2{
+    margin-top:10px;
+}
+
+.btnPainel{
+    width:80px;
+    height:80px;
+
+    border:none;
+    background-color:transparent;
+
+    cursor:pointer;
+
+    margin:3px;
+
+    background-repeat:no-repeat;
+    background-position:center;
+    background-size:contain;
+
+    transition:transform 0.1s;
+}
+
+.btnPainel:hover{
+    transform:scale(1.05);
+}
+
+.btnPainel:active{
+    transform:scale(0.95);
+}
+
+#btnLiga{
+    background-image:url("../images/Botão_Liga.png");
+}
+
+#btnDesliga{
+    background-image:url("../images/Botão_Desliga.png");
+}
