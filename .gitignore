@@ -1,0 +1,14 @@
+# Visual Studio
+.vs/
+
+# Compilação
+bin/
+obj/
+
+# TwinCAT
+_Boot/
+CompileInfo/
+Libraries/
+
+*.tmc
+*.compiled-library

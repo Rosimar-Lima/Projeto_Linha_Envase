@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="E_ESTADO" Id="{eac1f4f9-0e29-4336-a274-7b97cb558e1f}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM E_ESTADO
+
+	TYPE E_ESTADO :
+		(
+			PARADA,
+			MOVENDO,
+			ENVASANDO.
+			ENVASANDO_TAMPANDO
+		);
+		
+	END_TYPE;
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <LineIds Name="E_ESTADO">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

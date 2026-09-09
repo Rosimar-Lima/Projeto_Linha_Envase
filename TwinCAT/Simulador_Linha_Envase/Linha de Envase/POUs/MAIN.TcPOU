@@ -1,0 +1,225 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="MAIN" Id="{a71741e9-0650-4afa-b116-7e6cce8b6e97}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+
+    Estado : E_ESTADO := PARADA;
+
+    tEnvase : TON;
+    tTampagem : TON;
+	tMovimento : TON;
+	
+	//rSensorEV : R_TRIG;
+	//rSensorST : R_TRIG;
+	
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[GVL_LinhaEnvase.EstadoAtual := Estado;
+
+IF GVL_LinhaEnvase.Liga THEN
+	ESTADO := MOVENDO;
+	
+	GVL_LinhaEnvase.Liga := FALSE;
+	
+END_IF
+
+IF GVL_LinhaEnvase.Desliga THEN
+	ESTADO := PARADA;
+	
+	GVL_LinhaEnvase.Desliga := FALSE;
+	
+END_IF;
+
+//rSensorEV(CLK := GVL_LinhaEnvase.SensorEV);
+//rSensorST(CLK := GVL_LinhaEnvase.SensorST);
+
+//GVL_LinhaEnvase.rEV_Q := rSensorEV.Q;
+//GVL_LinhaEnvase.rST_Q := rSensorST.Q;
+
+CASE Estado OF
+
+//PARADA
+
+PARADA:
+
+	//GVL_LinhaEnvase.Liga := FALSE;
+	//GVL_LinhaEnvase.Desliga := FALSE;
+
+    GVL_LinhaEnvase.MotorEsteira := FALSE;
+
+    GVL_LinhaEnvase.ValvulaEnvase := FALSE;
+    GVL_LinhaEnvase.Seladora := FALSE;
+
+    GVL_LinhaEnvase.EV_Operando := FALSE;
+    GVL_LinhaEnvase.ST_Operando := FALSE;
+
+    IF GVL_LinhaEnvase.Liga THEN
+
+        Estado := MOVENDO;
+
+    END_IF;
+
+
+// MOVENDO
+
+MOVENDO:
+
+    GVL_LinhaEnvase.MotorEsteira := TRUE;
+
+    tMovimento(
+        IN := TRUE,
+        PT := T#3S
+    );
+
+    IF tMovimento.Q THEN
+
+        tMovimento(IN := FALSE);
+
+        CASE GVL_LinhaEnvase.SimuladorEtapa OF
+
+            0:
+
+                GVL_LinhaEnvase.SensorEV := TRUE;
+                GVL_LinhaEnvase.SensorST := FALSE;
+
+                GVL_LinhaEnvase.SimuladorEtapa := 1;
+
+            1:
+
+                GVL_LinhaEnvase.SensorEV := TRUE;
+                GVL_LinhaEnvase.SensorST := TRUE;
+
+        END_CASE;
+
+    END_IF;
+
+    IF GVL_LinhaEnvase.SensorEV
+    AND NOT GVL_LinhaEnvase.SensorST THEN
+
+        Estado := ENVASANDO;
+
+    END_IF;
+
+    IF GVL_LinhaEnvase.SensorEV
+    AND GVL_LinhaEnvase.SensorST THEN
+
+        Estado := ENVASANDO_TAMPANDO;
+	END_IF;
+ 
+
+
+// ENVASANDO
+
+ENVASANDO:
+
+    GVL_LinhaEnvase.MotorEsteira := FALSE;
+
+    GVL_LinhaEnvase.ValvulaEnvase := TRUE;
+    GVL_LinhaEnvase.EV_Operando := TRUE;
+
+    tEnvase(IN := TRUE, PT := T#2500MS);
+
+    IF tEnvase.Q THEN
+
+        GVL_LinhaEnvase.ValvulaEnvase := FALSE;
+        GVL_LinhaEnvase.EV_Operando := FALSE;
+
+        tEnvase(IN := FALSE);
+		
+		GVL_LinhaEnvase.SensorEV := FALSE;
+		GVL_LinhaEnvase.SensorST := FALSE;
+
+        Estado := MOVENDO;
+
+    END_IF;
+
+
+// ENVASANDO_TAMPANDO
+
+ENVASANDO_TAMPANDO:
+
+    GVL_LinhaEnvase.MotorEsteira := FALSE;
+
+    GVL_LinhaEnvase.ValvulaEnvase := TRUE;
+    GVL_LinhaEnvase.Seladora := TRUE;
+
+    GVL_LinhaEnvase.EV_Operando := TRUE;
+    GVL_LinhaEnvase.ST_Operando := TRUE;
+
+    tEnvase(IN := TRUE, PT := T#2500MS);
+
+    tTampagem(IN := TRUE, PT := T#2500MS);
+
+    IF tEnvase.Q AND tTampagem.Q THEN
+
+        GVL_LinhaEnvase.ValvulaEnvase := FALSE;
+        GVL_LinhaEnvase.Seladora := FALSE;
+
+        GVL_LinhaEnvase.EV_Operando := FALSE;
+        GVL_LinhaEnvase.ST_Operando := FALSE;
+
+        tEnvase(IN := FALSE);
+        tTampagem(IN := FALSE);
+
+        GVL_LinhaEnvase.GarrafasProduzidas :=
+            GVL_LinhaEnvase.GarrafasProduzidas + 1;
+
+	GVL_LinhaEnvase.SensorEV := FALSE;
+	GVL_LinhaEnvase.SensorST := FALSE;   
+     
+	Estado := MOVENDO;
+
+    END_IF;
+
+END_CASE;]]></ST>
+    </Implementation>
+    <LineIds Name="MAIN">
+      <LineId Id="225" Count="0" />
+      <LineId Id="354" Count="0" />
+      <LineId Id="362" Count="0" />
+      <LineId Id="364" Count="0" />
+      <LineId Id="369" Count="1" />
+      <LineId Id="372" Count="0" />
+      <LineId Id="365" Count="0" />
+      <LineId Id="363" Count="0" />
+      <LineId Id="353" Count="0" />
+      <LineId Id="355" Count="0" />
+      <LineId Id="358" Count="0" />
+      <LineId Id="373" Count="1" />
+      <LineId Id="356" Count="0" />
+      <LineId Id="231" Count="0" />
+      <LineId Id="230" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="238" Count="1" />
+      <LineId Id="237" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="91" Count="2" />
+      <LineId Id="96" Count="1" />
+      <LineId Id="360" Count="0" />
+      <LineId Id="359" Count="0" />
+      <LineId Id="361" Count="0" />
+      <LineId Id="98" Count="16" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="303" Count="41" />
+      <LineId Id="352" Count="0" />
+      <LineId Id="134" Count="3" />
+      <LineId Id="140" Count="8" />
+      <LineId Id="152" Count="6" />
+      <LineId Id="349" Count="2" />
+      <LineId Id="159" Count="6" />
+      <LineId Id="168" Count="11" />
+      <LineId Id="183" Count="1" />
+      <LineId Id="188" Count="1" />
+      <LineId Id="191" Count="12" />
+      <LineId Id="347" Count="0" />
+      <LineId Id="204" Count="0" />
+      <LineId Id="348" Count="0" />
+      <LineId Id="346" Count="0" />
+      <LineId Id="205" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

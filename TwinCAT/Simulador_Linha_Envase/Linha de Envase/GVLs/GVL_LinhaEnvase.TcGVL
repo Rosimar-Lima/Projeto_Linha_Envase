@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <GVL Name="GVL_LinhaEnvase" Id="{7dcfa4b0-a302-4f71-8d1c-6f7683387931}">
+    <Declaration><![CDATA[VAR_GLOBAL
+
+    Liga : 		BOOL;
+    Desliga : 	BOOL;
+
+    SensorEV : 	BOOL;
+    SensorST :	BOOL;
+
+    MotorEsteira : BOOL;
+
+    ValvulaEnvase : BOOL;
+    Seladora : 		BOOL;
+
+    EV_Operando : BOOL;
+    ST_Operando : BOOL;
+	
+	SimulaladorEtapa : INT := 0;
+	
+	//rEV_Q :BOOL;
+	//rST_Q :BOOL;
+	
+
+    GarrafasProduzidas : DINT;
+	
+	EstadoAtual : E_ESTADO;
+
+	SimuladorEtapa: INT;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>
