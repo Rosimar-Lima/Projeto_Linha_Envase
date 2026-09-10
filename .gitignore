@@ -6,9 +6,15 @@ bin/
 obj/
 
 # TwinCAT
-_Boot/
-CompileInfo/
-Libraries/
+**/_Boot/
+**/_CompileInfo/
+**/CompileInfo/
+**/Libraries/
 
 *.tmc
 *.compiled-library
+*.bak
+
+# Logs
+*.log
+``
