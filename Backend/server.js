@@ -3,14 +3,13 @@ const cors = require('cors');
 const AdsClient = require('ads-client').Client;
 
 const app = express();
+
 app.use(cors());
 
 const client = new AdsClient({
 
     targetAmsNetId: '39.90.64.65.1.1',
-
     targetAdsPort: 851,
-
     localAmsNetId: '192.168.56.1.1.1'
 
 });
@@ -64,13 +63,60 @@ app.get('/status', async (req, res) => {
         });
 
     }
-
     catch(err){
 
         res.status(500).json({
 
             erro: err.message
 
+        });
+
+    }
+
+});
+
+app.get('/liga', async (req, res) => {
+
+    try {
+
+        await client.writeValue(
+            'GVL_LinhaEnvase.CmdWeb',
+            1
+        );
+
+        res.json({
+            status: 'Liga enviado'
+        });
+
+    }
+    catch(err){
+
+        res.status(500).json({
+            erro: err.message
+        });
+
+    }
+
+});
+
+app.get('/desliga', async (req, res) => {
+
+    try {
+
+        await client.writeValue(
+            'GVL_LinhaEnvase.CmdWeb',
+            2
+        );
+
+        res.json({
+            status: 'Desliga enviado'
+        });
+
+    }
+    catch(err){
+
+        res.status(500).json({
+            erro: err.message
         });
 
     }

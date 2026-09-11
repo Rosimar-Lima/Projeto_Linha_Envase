@@ -26,15 +26,53 @@ const VELOCIDADE = 5;
 // -------------------------
 
 document.getElementById("btnLiga")
-.addEventListener("click", () => {
+.addEventListener("click", async () => {
 
-    ligada = true;
+    try {
+
+        const resposta =
+            await fetch(
+                'http://localhost:3000/liga'
+            );
+
+        const dados =
+            await resposta.json();
+
+        console.log(dados);
+
+    }
+
+    catch(err){
+
+        console.error(err);
+
+    }
+
 });
 
 document.getElementById("btnDesliga")
-.addEventListener("click", () => {
+.addEventListener("click", async () => {
 
-    ligada = false;
+    try {
+
+        const resposta =
+            await fetch(
+                'http://localhost:3000/desliga'
+            );
+
+        const dados =
+            await resposta.json();
+
+        console.log(dados);
+
+    }
+
+    catch(err){
+
+        console.error(err);
+
+    }
+
 });
 
 // -------------------------
@@ -274,6 +312,10 @@ async function atualizarPLC(){
 
         const dados =
             await resposta.json();
+
+        ligada = dados.motor;
+        contador.innerText =
+            dados.producao;
 
         contador.innerText =
             dados.producao;
