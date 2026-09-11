@@ -262,3 +262,72 @@ function animar(){
 }
 
 animar();
+
+async function atualizarPLC(){
+
+    try{
+
+        const resposta =
+            await fetch(
+                'http://localhost:3000/status'
+            );
+
+        const dados =
+            await resposta.json();
+
+        contador.innerText =
+            dados.producao;
+
+        const ev =
+            document.getElementById(
+                "enchedora"
+            );
+
+        const st =
+            document.getElementById(
+                "tampadora"
+            );
+
+        if(dados.ev){
+
+            ev.classList.add(
+                "operando"
+            );
+
+        }else{
+
+            ev.classList.remove(
+                "operando"
+            );
+
+        }
+
+        if(dados.st){
+
+            st.classList.add(
+                "operando"
+            );
+
+        }else{
+
+            st.classList.remove(
+                "operando"
+            );
+
+        }
+
+    }
+
+    catch(err){
+
+        console.error(err);
+
+    }
+
+}
+
+
+setInterval(
+    atualizarPLC,
+    1000
+);
