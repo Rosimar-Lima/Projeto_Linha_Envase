@@ -32,28 +32,69 @@ body{
 
     display:flex;
     justify-content:center;
-    gap:180px; /* espaço entre EV e ST */
+    gap:180px; /* espaço entre EV e AT */
 }
 
 #enchedora{
     width:150px;
-    height:80px;
-
-    background:limegreen;
+    height:160px;
 
     display:flex;
     justify-content:center;
     align-items:center;
 
     text-align:center;
+    font-weight:bold;
+    position:relative;
+}
+
+#statusEnvase{
+    position:absolute;
+    top:-42px;
+    left:50%;
+    width:190px;
+    padding:7px 8px;
+    border:2px solid #222;
+    background:#fff;
+    font-size:14px;
+    font-weight:bold;
+    text-align:center;
+    transform:translateX(-50%);
+    z-index:3;
+}
+
+#statusEnvase strong,
+#statusEnvase span{
+    display:block;
+    font-size:14px;
     font-weight:bold;
 }
 
-#tampadora{
-    width:150px;
-    height:80px;
+#statusEnvase span{
+    margin-top:4px;
+}
 
-    background:limegreen;
+.valvulaEnvase{
+    position:absolute;
+    top:-5px;
+    width:95px;
+    height:145px;
+    object-fit:contain;
+    clip-path:inset(9px 0 0 0);
+    transition:transform 0.7s ease-in;
+}
+
+#enchedora.operando .valvulaEnvase{
+    transform:translateY(50px);
+}
+
+#enchedora.recuando .valvulaEnvase{
+    transform:translateY(0);
+}
+
+#aplicadora{
+    width:150px;
+    height:160px;
 
     display:flex;
     justify-content:center;
@@ -61,6 +102,42 @@ body{
 
     text-align:center;
     font-weight:bold;
+    position:relative;
+}
+
+#statusAplicacao{
+    position:absolute;
+    top:-42px;
+    left:50%;
+    width:190px;
+    padding:7px 8px;
+    border:2px solid #222;
+    background:#fff;
+    font-size:14px;
+    font-weight:bold;
+    text-align:center;
+    transform:translateX(-50%);
+    z-index:3;
+}
+
+.aplicadoraTampa{
+    position:absolute;
+    top:-5px;
+    width:95px;
+    height:145px;
+    object-fit:contain;
+    clip-path:inset(9px 0 0 0);
+    transition:top 0.7s ease-in;
+}
+
+#aplicadora.operando .aplicadoraTampa,
+#aplicadora.descendo .aplicadoraTampa,
+#aplicadora.abaixada .aplicadoraTampa{
+    top:45px;
+}
+
+#aplicadora.recuando .aplicadoraTampa{
+    top:-5px;
 }
 
 .garrafaContainer{
@@ -129,6 +206,12 @@ h2{
     margin-top:10px;
 }
 
+.contadorProducao{
+    margin:2px 0;
+    line-height:1.1;
+    font-size:16px;
+}
+
 .btnPainel{
     width:80px;
     height:80px;
@@ -163,26 +246,8 @@ h2{
     background-image:url("../images/Botão_Desliga.png");
 }
 
-.operando{
-
-    background:yellow !important;
-
-    animation:piscando 0.6s infinite;
-
+#btnReset{
+    background-image:url("../images/Botão_Reset.png");
+    background-size:72px 72px;
 }
 
-@keyframes piscando{
-
-    0%{
-        opacity:1;
-    }
-
-    50%{
-        opacity:0.3;
-    }
-
-    100%{
-        opacity:1;
-    }
-
-}

@@ -1,77 +1,96 @@
 let ligada = false;
+let evRecuando = false;
+let offPressionado = false;
 let garrafas = [];
-let producao = 0;
+let garrafasEnvasadas = 0;
+let garrafasTampadas = 0;
+let producaoTotal = 0;
 let envaseConcluido = false;
-let tampagemConcluida =false;
+let aplicacaoConcluida = false;
 
 const container = document.getElementById("garrafas");
-const contador = document.getElementById("contador");
+const contadorEnvasadas = document.getElementById("contadorEnvasadas");
+const contadorTampadas = document.getElementById("contadorTampadas");
+const contadorTotal = document.getElementById("contadorTotal");
 
 window.onload = () => {
 
     const ev = document.getElementById("enchedora");
-    const st = document.getElementById("tampadora");
+    const at = document.getElementById("aplicadora");
 
 };
 
-const POS_EV = 405;
-const POS_ST = 735;
+const POS_EV = 388;
+const POS_AT = 733;
 
-const ESPACAMENTO = 330;
+const ESPACAMENTO = POS_AT - POS_EV;
 
 const VELOCIDADE = 5;
+const TEMPO_ENVASE = Math.ceil(85 / 2) * 60;
 
 // -------------------------
 // BOTÕES
 // -------------------------
 
 document.getElementById("btnLiga")
-.addEventListener("click", async () => {
+.addEventListener("click", () => {
 
-    try {
-
-        const resposta =
-            await fetch(
-                'http://localhost:3000/liga'
-            );
-
-        const dados =
-            await resposta.json();
-
-        console.log(dados);
-
-    }
-
-    catch(err){
-
-        console.error(err);
-
-    }
+    ligada = true;
+    offPressionado = false;
 
 });
 
 document.getElementById("btnDesliga")
-.addEventListener("click", async () => {
+.addEventListener("click", () => {
 
-    try {
+    ligada = false;
+    offPressionado = true;
 
-        const resposta =
-            await fetch(
-                'http://localhost:3000/desliga'
-            );
+});
 
-        const dados =
-            await resposta.json();
+document.getElementById("btnReset")
+.addEventListener("click", () => {
 
-        console.log(dados);
-
+    if(!offPressionado){
+        return;
     }
 
-    catch(err){
+    garrafasEnvasadas = 0;
+    garrafasTampadas = 0;
+    producaoTotal = 0;
+    atualizarContadores();
 
-        console.error(err);
+    garrafas.forEach(garrafa => {
 
-    }
+        clearInterval(garrafa.enchimentoInterval);
+        clearTimeout(garrafa.envaseDescidaTimeout);
+        clearTimeout(garrafa.envaseRecuoTimeout);
+        clearTimeout(garrafa.aplicacaoDescidaTimeout);
+        clearTimeout(garrafa.aplicacaoTimeout);
+        clearTimeout(garrafa.aplicacaoRecuoTimeout);
+        garrafa.container.remove();
+
+    });
+
+    garrafas = [];
+    document.getElementById("enchedora")
+        .classList.remove("operando");
+    document.getElementById("enchedora")
+        .classList.remove("recuando");
+    evRecuando = false;
+    document.querySelector("#statusEnvase span")
+        .innerText = "ENVASE OFF";
+    document.getElementById("aplicadora")
+        .classList.remove("operando");
+    document.getElementById("aplicadora")
+        .classList.remove("recuando");
+    document.getElementById("aplicadora")
+        .classList.remove("descendo");
+    document.getElementById("aplicadora")
+        .classList.remove("abaixada");
+
+    criarGarrafa(20);
+    criarGarrafa(20 - ESPACAMENTO);
 
 });
 
@@ -109,9 +128,19 @@ function criarGarrafa(posicaoInicial){
 
         enchendo: false,
         enchida: false,
+        envaseContabilizado: false,
+        evBloqueada: false,
+        envaseDescidaTimeout: null,
+        enchimentoInterval: null,
+        envaseRecuoTimeout: null,
 
-        tampando: false,
-        tampada: false,
+        aplicando: false,
+        tampaAplicada: false,
+        tampaContabilizada: false,
+        atBloqueada: false,
+        aplicacaoDescidaTimeout: null,
+        aplicacaoTimeout: null,
+        aplicacaoRecuoTimeout: null,
 
         contabilizada: false,
 
@@ -130,69 +159,102 @@ function iniciarEnvase(garrafa){
     
     console.log("EV", garrafa.posicao);
 
-    ligada = false;
-
-    document.getElementById("enchedora")
-        .classList.add("operando");
+    const enchedora = document.getElementById("enchedora");
+    const statusEnvase = document.querySelector("#statusEnvase span");
+    garrafa.evBloqueada = true;
+    enchedora.classList.add("operando");
+    statusEnvase.innerText = "ENVASE OFF";
 
     console.log("ENVASE INICIADO");
 
-    const enchimento = setInterval(() => {
-        garrafa.nivel += 2;
+    garrafa.envaseDescidaTimeout = setTimeout(() => {
+        garrafa.envaseDescidaTimeout = null;
+        statusEnvase.innerText = "ENVASE ON";
+        garrafa.enchimentoInterval = setInterval(() => {
+            garrafa.nivel += 2;
 
-        garrafa.liquido.style.height = garrafa.nivel + "%";
+            garrafa.liquido.style.height = garrafa.nivel + "%";
 
-        if(garrafa.nivel >= 85){
-            clearInterval(enchimento);
-        
-            garrafa.enchida = true;
-            garrafa.enchendo = false;
+            if(garrafa.nivel >= 85){
+                clearInterval(garrafa.enchimentoInterval);
+                garrafa.enchimentoInterval = null;
+                garrafa.enchida = true;
+                garrafa.enchendo = false;
 
-            document.getElementById("enchedora")
-                .classList.remove("operando");
+                if(!garrafa.envaseContabilizado){
+                    garrafa.envaseContabilizado = true;
+                    garrafasEnvasadas++;
+                    atualizarContadores();
+                }
 
-            console.log("ENVASE FINALIZADO");
+                enchedora.classList.remove("operando");
+                enchedora.classList.add("recuando");
+                evRecuando = true;
+                statusEnvase.innerText = "ENVASE OFF";
 
-            ligada = true;
+                console.log("ENVASE FINALIZADO");
 
-                       
-            
-        }
+                garrafa.envaseRecuoTimeout = setTimeout(() => {
+                    enchedora.classList.remove("recuando");
+                    garrafa.envaseRecuoTimeout = null;
+                    evRecuando = false;
+                    garrafa.evBloqueada = false;
+                }, 750);
+            }
+        }, 60);
+    }, 700);
 
-    }, 60);
 }
 
 
+// APLICAÇÃO DA TAMPA
+// -------------------------
 
-//-------------------------
-//TAMPAGEM    
-//-------------------------
+function iniciarAplicacao(garrafa){
+    console.log("AT", garrafa.posicao);
 
-function iniciarTampagem(garrafa){
-    console.log("ST", garrafa.posicao);
-    
-    ligada = false;
+    const aplicadora = document.getElementById("aplicadora");
+    garrafa.atBloqueada = true;
+    aplicadora.classList.add("operando");
+    aplicadora.classList.add("descendo");
+    console.log("APLICAÇÃO INICIADA");
 
-    document.getElementById("tampadora")
-        .classList.add("operando");
+    garrafa.aplicacaoDescidaTimeout = setTimeout(() => {
+        garrafa.aplicacaoDescidaTimeout = null;
+        aplicadora.classList.remove("descendo");
+        aplicadora.classList.add("abaixada");
 
-    console.log("TAMPAGEM INICIADA");
-    
-    setTimeout(() => {
-        garrafa.tampada = true;
-        garrafa.tampando = false;
+        garrafa.aplicacaoTimeout = setTimeout(() => {
+            garrafa.tampaAplicada = true;
+            garrafa.aplicando = false;
+            garrafa.atBloqueada = true;
+            garrafa.aplicacaoTimeout = null;
 
-        document.getElementById("tampadora")
-            .classList.remove("operando");
+            if(!garrafa.tampaContabilizada){
+                garrafa.tampaContabilizada = true;
+                garrafasTampadas++;
+                producaoTotal++;
+                atualizarContadores();
+            }
+            aplicadora.classList.remove("operando");
+            aplicadora.classList.remove("abaixada");
+            aplicadora.classList.add("recuando");
+            console.log("APLICAÇÃO FINALIZADA");
 
-        console.log("TAMPAGEM FINALIZADA");
+            garrafa.aplicacaoRecuoTimeout = setTimeout(() => {
+                aplicadora.classList.remove("recuando");
+                garrafa.aplicacaoRecuoTimeout = null;
+                garrafa.atBloqueada = false;
+            }, 750);
+        }, TEMPO_ENVASE);
+    }, 700);
+}
 
-        ligada = true;
-
-    
-
-    }, 2600);
-   }
+function atualizarContadores(){
+    contadorEnvasadas.innerText = garrafasEnvasadas;
+    contadorTampadas.innerText = garrafasTampadas;
+    contadorTotal.innerText = producaoTotal;
+}
 
 // -------------------------
 // PRIMEIRA GARRAFA
@@ -207,9 +269,7 @@ criarGarrafa(20 - ESPACAMENTO);
 
 function animar(){
 
-    if(ligada){
-
-        garrafas.forEach(g => {
+    garrafas.forEach(g => {
 
             // Detecta chegada na EV
 
@@ -220,6 +280,8 @@ function animar(){
                 !g.enchida
             ){
 
+                g.posicao = POS_EV;
+                g.container.style.left = g.posicao + "px";
                 g.enchendo = true;
 
                 iniciarEnvase(g);
@@ -227,9 +289,18 @@ function animar(){
 
             // Movimenta somente se não estiver enchendo
 
+            const garrafaAFrente = garrafas
+                .filter(outra => outra.posicao > g.posicao)
+                .sort((a, b) => a.posicao - b.posicao)[0];
+            const distanciaSegura = !garrafaAFrente ||
+                g.posicao + VELOCIDADE <= garrafaAFrente.posicao - ESPACAMENTO;
             if(
+                ligada &&
                 !g.enchendo &&
-                !g.tampando
+                !g.aplicando &&
+                !g.evBloqueada &&
+                !g.atBloqueada &&
+                distanciaSegura
             ){
 
                 g.posicao += VELOCIDADE;
@@ -239,33 +310,26 @@ function animar(){
             }
             
 
-            // Detecta chegada na ST
+            // Detecta chegada na AT
 
             if(
-                g.posicao >= POS_ST - 5 &&
-                g.posicao <= POS_ST &&
-                !g.tampando &&
+                g.posicao >= POS_AT - VELOCIDADE * 2 &&
+                g.posicao <= POS_AT + VELOCIDADE &&
+                !g.aplicando &&
                 g.enchida &&
-                !g.tampada
+                !g.tampaAplicada
             ){
 
-                g.tampando = true;
+                g.posicao = POS_AT;
+                g.container.style.left = g.posicao + "px";
+                g.aplicando = true;
 
-                iniciarTampagem(g);
+                iniciarAplicacao(g);
             }
 
-            // Atualiza contador
+    });
 
-            if(
-                g.tampada &&
-                !g.contabilizada
-
-            ){
-                g.contabilizada = true;
-                producao++;
-                contador.innerText = producao;
-            }
-        });
+    if(ligada){
 
         // Cria novas garrafas
 
@@ -301,75 +365,3 @@ function animar(){
 
 animar();
 
-async function atualizarPLC(){
-
-    try{
-
-        const resposta =
-            await fetch(
-                'http://localhost:3000/status'
-            );
-
-        const dados =
-            await resposta.json();
-
-        ligada = dados.motor;
-        contador.innerText =
-            dados.producao;
-
-        contador.innerText =
-            dados.producao;
-
-        const ev =
-            document.getElementById(
-                "enchedora"
-            );
-
-        const st =
-            document.getElementById(
-                "tampadora"
-            );
-
-        if(dados.ev){
-
-            ev.classList.add(
-                "operando"
-            );
-
-        }else{
-
-            ev.classList.remove(
-                "operando"
-            );
-
-        }
-
-        if(dados.st){
-
-            st.classList.add(
-                "operando"
-            );
-
-        }else{
-
-            st.classList.remove(
-                "operando"
-            );
-
-        }
-
-    }
-
-    catch(err){
-
-        console.error(err);
-
-    }
-
-}
-
-
-setInterval(
-    atualizarPLC,
-    1000
-);
