@@ -12,6 +12,10 @@ const container = document.getElementById("garrafas");
 const contadorEnvasadas = document.getElementById("contadorEnvasadas");
 const contadorTampadas = document.getElementById("contadorTampadas");
 const contadorTotal = document.getElementById("contadorTotal");
+const btnInstrucoes = document.getElementById("btnInstrucoes");
+const opcoesInstrucoes = document.getElementById("opcoesInstrucoes");
+const painelInstrucoes = document.getElementById("painelInstrucoes");
+const textoInstrucao = document.getElementById("textoInstrucao");
 
 window.onload = () => {
 
@@ -92,6 +96,34 @@ document.getElementById("btnReset")
     criarGarrafa(20);
     criarGarrafa(20 - ESPACAMENTO);
 
+});
+
+btnInstrucoes.addEventListener("click", () => {
+    const aberto = !opcoesInstrucoes.hidden;
+    opcoesInstrucoes.hidden = aberto;
+    painelInstrucoes.hidden = aberto;
+    if(aberto){
+        textoInstrucao.innerText = "";
+    }
+    btnInstrucoes.setAttribute("aria-expanded", String(!aberto));
+});
+
+document.getElementById("instrucaoOn")
+.addEventListener("click", () => {
+    textoInstrucao.innerText = "On: Pressione este comando para iniciar o movimento das garrafas na linha de envase.";
+    painelInstrucoes.hidden = false;
+});
+
+document.getElementById("instrucaoOff")
+.addEventListener("click", () => {
+    textoInstrucao.innerText = "Off: Pressione este comando para interromper o movimento das garrafas na linha de envase.";
+    painelInstrucoes.hidden = false;
+});
+
+document.getElementById("instrucaoReset")
+.addEventListener("click", () => {
+    textoInstrucao.innerText = "Reset: Pressione este comando para zerar os contadores e reposicionar as garrafas.";
+    painelInstrucoes.hidden = false;
 });
 
 // -------------------------

@@ -238,6 +238,68 @@ h2{
     transform:scale(0.95);
 }
 
+.instrucoesControle{
+    display:block;
+    width:max-content;
+    margin:18px auto 0;
+}
+
+.btnInstrucoes{
+    padding:10px 16px;
+    border:2px solid #222;
+    border-radius:4px;
+    background:#f2f2f2;
+    color:#222;
+    font-size:15px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.btnInstrucoes:hover,
+.opcoesInstrucoes button:hover{
+    background:#dcecff;
+}
+
+.opcoesInstrucoes{
+    display:flex;
+    gap:6px;
+    min-width:max-content;
+    padding-top:6px;
+    justify-content:center;
+}
+
+.opcoesInstrucoes[hidden],
+.painelInstrucoes[hidden]{
+    display:none;
+}
+
+.opcoesInstrucoes button{
+    width:72px;
+    height:36px;
+    padding:0;
+    border:1px solid #222;
+    border-radius:2px;
+    background:#fff;
+    color:#222;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    box-shadow:0 2px 5px rgba(0,0,0,0.2);
+}
+
+.painelInstrucoes{
+    width:min(520px, calc(100% - 30px));
+    margin:10px auto 18px;
+    padding:12px 16px;
+    background:#eef6ff;
+    text-align:left;
+    box-sizing:border-box;
+}
+
+.painelInstrucoes p{
+    margin:0;
+}
+
 #btnLiga{
     background-image:url("../images/Botão_Liga.png");
 }
