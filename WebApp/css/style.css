@@ -1,6 +1,17 @@
 body{
     font-family: Arial, sans-serif;
     text-align:center;
+    margin:0;
+    padding:0 10px 24px;
+    box-sizing:border-box;
+    overflow-x:hidden;
+}
+
+#linhaViewport{
+    width:min(1200px, 100%);
+    height:380px;
+    margin:auto;
+    overflow:visible;
 }
 
 #linha{
@@ -10,6 +21,7 @@ body{
     border:3px solid black;
     margin:auto;
     overflow:hidden;
+    transform-origin:top left;
 }
 
 #linha::after{
@@ -198,7 +210,7 @@ body{
 }
 
 h1{
-    margin-top: 10ppx;
+    margin-top:10px;
     margin-bottom:10px;
 }
 
@@ -311,5 +323,46 @@ h2{
 #btnReset{
     background-image:url("../images/Botão_Reset.png");
     background-size:72px 72px;
+}
+
+@media (max-width:600px){
+    body{
+        padding-left:6px;
+        padding-right:6px;
+    }
+
+    h1{
+        font-size:26px;
+    }
+
+    .btnPainel{
+        width:64px;
+        height:64px;
+    }
+
+    #btnReset{
+        background-size:58px 58px;
+    }
+
+    .contadorProducao{
+        font-size:14px;
+    }
+
+    #linhaViewport{
+        width:100%;
+        height:calc((100vw - 12px) * 0.3167);
+    }
+
+    .instrucoesControle{
+        margin-top:16px;
+    }
+
+    .btnInstrucoes{
+        font-size:14px;
+    }
+
+    .painelInstrucoes{
+        font-size:14px;
+    }
 }
 

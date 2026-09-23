@@ -16,6 +16,17 @@ const btnInstrucoes = document.getElementById("btnInstrucoes");
 const opcoesInstrucoes = document.getElementById("opcoesInstrucoes");
 const painelInstrucoes = document.getElementById("painelInstrucoes");
 const textoInstrucao = document.getElementById("textoInstrucao");
+const linhaViewport = document.getElementById("linhaViewport");
+const linha = document.getElementById("linha");
+
+function ajustarLinhaParaTela(){
+    const escala = Math.min(1, linhaViewport.clientWidth / 1200);
+    linha.style.transform = `scale(${escala})`;
+    linhaViewport.style.height = `${380 * escala}px`;
+}
+
+window.addEventListener("resize", ajustarLinhaParaTela);
+ajustarLinhaParaTela();
 
 window.onload = () => {
 
