@@ -31,7 +31,19 @@ body{
     top:360px;
     width:100%;
     height:20px;
-    background:#555;
+    background:repeating-linear-gradient(90deg, #444 0 4px, #777 4px 34px);
+    background-size:68px 20px;
+    z-index:2;
+}
+
+#linha.transportando::after{
+    animation:movimentarEsteira 0.45s linear infinite;
+}
+
+@keyframes movimentarEsteira{
+    to{
+        background-position:68px 0;
+    }
 }
 
 
@@ -207,6 +219,15 @@ body{
     position:absolute;
     width:100%;
     height:100%;
+    z-index:1;
+}
+
+.garrafaIhm{
+    position:absolute;
+    bottom:20px;
+    width:60px;
+    height:160px;
+    object-fit:contain;
 }
 
 h1{
@@ -323,6 +344,50 @@ h2{
 #btnReset{
     background-image:url("../images/Botão_Reset.png");
     background-size:72px 72px;
+}
+
+.statusConexao{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    min-height:24px;
+    margin:8px auto;
+    color:#333;
+    font-size:14px;
+    font-weight:700;
+}
+
+.indicadorConexao{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:#a33;
+}
+
+.indicadorConexao.conectado{
+    background:#238636;
+}
+
+.indicadorConexao.aguardando{
+    background:#b58100;
+}
+
+.separadorStatus{
+    color:#888;
+}
+
+.mensagemErro{
+    width:min(520px, calc(100% - 30px));
+    margin:8px auto;
+    color:#a12622;
+    font-size:14px;
+}
+
+.btnPainel:disabled{
+    cursor:not-allowed;
+    filter:grayscale(1);
+    opacity:0.55;
 }
 
 @media (max-width:600px){

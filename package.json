@@ -1,0 +1,17 @@
+{
+  "name": "linha-envase-hmi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ponte local entre a IHM web e o PLC TwinCAT via ADS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check WebApp/js/app.js"
+  },
+  "dependencies": {
+    "ads-client": "^2.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  }
+}
