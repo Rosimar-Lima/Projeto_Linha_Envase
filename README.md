@@ -5,7 +5,6 @@ Simulador interativo de uma **Linha de Envase**, desenvolvido como parte do Proj
 O objetivo é demonstrar conceitos de **JavaScript**, **HTML** e **CSS** aplicados ao controle de processos industriais, incluindo:
 
 - Enchimento
-- Tampagem
 - Contadores de produção
 
 ---
@@ -13,8 +12,8 @@ O objetivo é demonstrar conceitos de **JavaScript**, **HTML** e **CSS** aplicad
 ## 🧩 Funcionalidades
 
 - Simulação visual da linha de envase
-- Controle do ciclo de enchimento e tampagem
-- Contador automático de unidades Envasadas, Tampadas e Produzidas
+- Controle do ciclo de enchimento
+- Contador automático de unidades Envasadas e Produzidas
 - Interface simples e intuitiva para fins didáticos
 
 ---
@@ -45,12 +44,24 @@ npm install
 npm start
 ```
 
+Para desenvolvimento, use `npm run dev` (nodemon): reinicia o serviço automaticamente ao salvar `server.js` ou `.env`. Em ambos os casos, para parar aperte `Ctrl+C`.
+
 Abra `http://127.0.0.1:3000`. O arquivo `.env` permite configurar o AMS Net ID e a porta ADS do PLC. O serviço usa o roteador ADS local do TwinCAT XAE; por isso, a rota para a VM deve estar configurada e conectada no XAE. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
 
-O serviço espera os símbolos `GVL_HMI.bCmdStart`, `bCmdStop`, `bCmdReset`, `bRunning`, `nBottlesFilled`, `nBottlesCapped` e `nProductionTotal`. Se o nome da GVL ou das variáveis no projeto PLC for diferente, ajuste os caminhos em `server.js`.
+A variável `ADS_POLL_INTERVAL_MS` (padrão `200`) define o intervalo de leitura do PLC. Ela **precisa ser bem menor que a menor etapa do ciclo** (`step1 = 460 ms`); com o valor antigo de `1000 ms` a IHM recebia o estado com até 1 s de atraso, a esteira saía de sincronia e a garrafa "saltava" até S1 a cada poucos ciclos.
 
-Os estados das estações EV e AT ainda não são publicados pelo PLC; por isso a interface os identifica como indisponíveis, em vez de simular movimentos localmente.
+O serviço espera os símbolos `GVL_HMI.bCmdStart`, `bCmdStop`, `bCmdReset`, `bRunning`, `bSensorS1`, `bBottlePositioned`, `bConveyorOn`, `bEvOn`, `bAtOn`, `nFillPercent`, `nBottlesFilled`, `nBottlesCapped` e `nProductionTotal`. Se o nome da GVL ou das variáveis no projeto PLC for diferente, ajuste os caminhos em `server.js`.
+
+O estado da estação EV (válvula de envase) é publicado pelo PLC via `bEvOn` e `nFillPercent`, e a interface o reflete em tempo real. A estação AT (aplicadora de tampas) foi removida nesta etapa: `bAtOn` e `nBottlesCapped` permanecem publicados apenas por compatibilidade e ficam sempre em falso/zero.
 
 A IHM diferencia a conexão ADS do estado do runtime PLC. Os comandos ficam habilitados somente quando o runtime está em `Run`; em `Stop` ou `Config`, a interface indica que o PLC está parado e bloqueia os comandos.
+
+### Intertravamento da EV (segurança)
+
+Regra: a válvula de envase (EV) só atua se, e somente se, o sensor S1 acusar a presença da garrafa **e** a esteira estiver parada. A regra é garantida em três camadas:
+
+1. **PLC (`MAIN.st`)**: o ciclo avança por etapas (transporte inicial → S1 acusa a garrafa → esteira para e aguarda → envase → transporte). `GVL_HMI.bEvInterlock := bSensorS1 AND bBeltStopped` e a EV (`GVL_HMI.bEvOn`) só liga com `bRunning AND bEvInterlock AND NOT bFillDone`. Sem o intertravamento, a EV não abre.
+2. **Ponte Node (`server.js`)**: antes de publicar, a ponte nunca envia `evOn = true` sem `bottlePositioned = true`. A tentativa é exposta em `evBlocked` e registrada no log.
+3. **IHM (`WebApp/js/app.js`)**: o enchimento só inicia com a garrafa exatamente sob a EV e, ao receber `bottlePositioned`, a garrafa é alinhada sob a válvula e a fila é congelada para manter o sincronismo. Enquanto a EV atua, a esteira fica travada. A verificação é silenciosa, sem mensagens na interface.
 
 ---

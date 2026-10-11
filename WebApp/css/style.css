@@ -9,7 +9,7 @@ body{
 
 #linhaViewport{
     width:min(1200px, 100%);
-    height:380px;
+    height:456px;
     margin:auto;
     overflow:visible;
 }
@@ -20,7 +20,7 @@ body{
     height:380px;
     border:3px solid black;
     margin:auto;
-    overflow:hidden;
+    overflow:visible;
     transform-origin:top left;
 }
 
@@ -29,21 +29,12 @@ body{
     position:absolute;
     left: 5px;
     top:360px;
-    width:100%;
+    right:5px;
     height:20px;
     background:repeating-linear-gradient(90deg, #444 0 4px, #777 4px 34px);
     background-size:68px 20px;
+    background-position:var(--belt-position, 0px) 0;
     z-index:2;
-}
-
-#linha.transportando::after{
-    animation:movimentarEsteira 0.45s linear infinite;
-}
-
-@keyframes movimentarEsteira{
-    to{
-        background-position:68px 0;
-    }
 }
 
 
@@ -104,16 +95,21 @@ body{
     width:95px;
     height:145px;
     object-fit:contain;
-    clip-path:inset(9px 0 0 0);
-    transition:transform 0.7s ease-in;
 }
 
-#enchedora.operando .valvulaEnvase{
-    transform:translateY(50px);
+.sensorPresenca{
+    position:absolute;
+    top:350px;
+    left:50%;
+    width:32px;
+    height:70px;
+    object-fit:contain;
+    transform:translateX(-50%);
+    z-index:4;
 }
 
-#enchedora.recuando .valvulaEnvase{
-    transform:translateY(0);
+#sensorS1.detectando{
+    filter:drop-shadow(0 0 8px #2caa4b);
 }
 
 #aplicadora{
@@ -154,72 +150,16 @@ body{
     transition:top 0.7s ease-in;
 }
 
-#aplicadora.operando .aplicadoraTampa,
-#aplicadora.descendo .aplicadoraTampa,
-#aplicadora.abaixada .aplicadoraTampa{
+#aplicadora.aplicando .aplicadoraTampa{
     top:45px;
 }
 
-#aplicadora.recuando .aplicadoraTampa{
-    top:-5px;
-}
-
-.garrafaContainer{
-
-    position:absolute;
-
-    bottom:20px;
-
-    width:60px;
-    height:160px;
-}
-
-.garrafaContainer img{
-
-    position:absolute;
-
-    width:100%;
-    height:100%;
-
-    left:0;
-    top:0;
-
-    z-index:1;
-}
-
-.liquido{
-
-    position:absolute;
-
-    left:10px;
-    bottom:2px;
-
-    width: 40px;
-    height: 0px;
-
-    background: linear-gradient(
-        to right,
-        #58cfff,
-        #9be8ff,
-        #58cfff
-    );
-
-    opacity:0.5;
-    border-radius:0 0 12px 12px;  
-
-    z-index:999;
-    
-}
-
-.garrafa img{
-    height: 120px;
-    width:auto;
-}
 #garrafas{
     position:absolute;
     width:100%;
     height:100%;
     z-index:1;
+    overflow:hidden;
 }
 
 .garrafaIhm{
@@ -227,7 +167,29 @@ body{
     bottom:20px;
     width:60px;
     height:160px;
+}
+
+.liquidoGarrafa{
+    position:absolute;
+    left:16px;
+    bottom:20px;
+    width:28px;
+    height:0;
+    max-height:90px;
+    border-radius:2px 2px 6px 6px;
+    background:linear-gradient(to top, #149ed1, #6be4ff);
+    opacity:0.85;
+    transition:height 0.2s linear;
+    z-index:1;
+}
+
+.contornoGarrafa{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
     object-fit:contain;
+    z-index:2;
 }
 
 h1{
@@ -334,15 +296,15 @@ h2{
 }
 
 #btnLiga{
-    background-image:url("../images/Botão_Liga.png");
+    background-image:url("../images/botao_liga.png");
 }
 
 #btnDesliga{
-    background-image:url("../images/Botão_Desliga.png");
+    background-image:url("../images/botao_desliga.png");
 }
 
 #btnReset{
-    background-image:url("../images/Botão_Reset.png");
+    background-image:url("../images/botao_reset.png");
     background-size:72px 72px;
 }
 
@@ -411,11 +373,6 @@ h2{
 
     .contadorProducao{
         font-size:14px;
-    }
-
-    #linhaViewport{
-        width:100%;
-        height:calc((100vw - 12px) * 0.3167);
     }
 
     .instrucoesControle{

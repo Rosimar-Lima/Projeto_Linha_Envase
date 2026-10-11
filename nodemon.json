@@ -1,0 +1,6 @@
+{
+  "watch": ["server.js", ".env"],
+  "ext": "js,json",
+  "ignore": ["WebApp/**", "node_modules/**"],
+  "delay": 200
+}
