@@ -39,14 +39,13 @@ A WebApp pode ser executada como uma IHM local. O PLC fica responsável pelos co
 No PowerShell, na pasta do projeto:
 
 ```powershell
-Copy-Item .env.example .env
 npm install
 npm start
 ```
 
 Para desenvolvimento, use `npm run dev` (nodemon): reinicia o serviço automaticamente ao salvar `server.js` ou `.env`. Em ambos os casos, para parar aperte `Ctrl+C`.
 
-Abra `http://127.0.0.1:3000`. O arquivo `.env` permite configurar o AMS Net ID e a porta ADS do PLC. O serviço usa o roteador ADS local do TwinCAT XAE; por isso, a rota para a VM deve estar configurada e conectada no XAE. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
+Abra `http://127.0.0.1:3000`. Opcionalmente, crie um arquivo `.env` (não versionado) para sobrescrever os valores padrão: `HOST`, `PORT`, `ADS_TARGET_AMS_NET_ID`, `ADS_TARGET_PORT` e `ADS_POLL_INTERVAL_MS`. O serviço usa o roteador ADS local do TwinCAT XAE; por isso, a rota para a VM deve estar configurada e conectada no XAE. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
 
 A variável `ADS_POLL_INTERVAL_MS` (padrão `200`) define o intervalo de leitura do PLC. Ela **precisa ser bem menor que a menor etapa do ciclo** (`step1 = 460 ms`); com o valor antigo de `1000 ms` a IHM recebia o estado com até 1 s de atraso, a esteira saía de sincronia e a garrafa "saltava" até S1 a cada poucos ciclos.
 
