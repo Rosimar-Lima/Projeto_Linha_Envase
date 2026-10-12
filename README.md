@@ -26,7 +26,7 @@ O objetivo é demonstrar conceitos de **JavaScript**, **HTML** e **CSS** aplicad
 
 ## IHM conectada ao TwinCAT
 
-A WebApp pode ser executada como uma IHM local. O PLC fica responsável pelos comandos e contadores; o serviço Node.js faz a comunicação ADS e envia os estados à página por WebSocket.
+A pasta `IHM` é o painel de máquina, onde o operador acompanha e manipula a produção de garrafas. O PLC fica responsável pelos comandos e contadores; o serviço Node.js faz a comunicação ADS e envia os estados à página por WebSocket.
 
 ### Requisitos
 
@@ -61,6 +61,6 @@ Regra: a válvula de envase (EV) só atua se, e somente se, o sensor S1 acusar a
 
 1. **PLC (`MAIN.st`)**: o ciclo avança por etapas (transporte inicial → S1 acusa a garrafa → esteira para e aguarda → envase → transporte). `GVL_HMI.bEvInterlock := bSensorS1 AND bBeltStopped` e a EV (`GVL_HMI.bEvOn`) só liga com `bRunning AND bEvInterlock AND NOT bFillDone`. Sem o intertravamento, a EV não abre.
 2. **Ponte Node (`server.js`)**: antes de publicar, a ponte nunca envia `evOn = true` sem `bottlePositioned = true`. A tentativa é exposta em `evBlocked` e registrada no log.
-3. **IHM (`WebApp/js/app.js`)**: o enchimento só inicia com a garrafa exatamente sob a EV e, ao receber `bottlePositioned`, a garrafa é alinhada sob a válvula e a fila é congelada para manter o sincronismo. Enquanto a EV atua, a esteira fica travada. A verificação é silenciosa, sem mensagens na interface.
+3. **IHM (`IHM/js/app.js`)**: o enchimento só inicia com a garrafa exatamente sob a EV e, ao receber `bottlePositioned`, a garrafa é alinhada sob a válvula e a fila é congelada para manter o sincronismo. Enquanto a EV atua, a esteira fica travada. A verificação é silenciosa, sem mensagens na interface.
 
 ---

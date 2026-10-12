@@ -37,7 +37,7 @@ const symbols = {
 const app = express();
 const server = http.createServer(app);
 const sockets = new WebSocketServer({ server });
-const webAppPath = path.join(__dirname, "WebApp");
+const ihmPath = path.join(__dirname, "IHM");
 
 let adsClient;
 let adsConnected = false;
@@ -67,7 +67,13 @@ let lastState = {
     total: 0
 };
 
-app.use(express.static(webAppPath));
+app.use(express.static(ihmPath, {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-cache");
+        }
+    }
+}));
 
 function publishState(state) {
     lastState = state;
