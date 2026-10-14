@@ -31,13 +31,15 @@ const BOTTLE_ART_RIGHT = 55.3;
 const S1_TRIGGER_POSITION = S1_CENTER - BOTTLE_ART_RIGHT;
 const BOTTLE_ENTRY_POSITION = 20;
 const BELT_PATTERN_WIDTH = 68;
-const FILL_ANIMATION_MS = 2000;
 const LIQUID_MAX_HEIGHT = 115;
 const EV_STOP_TOLERANCE = 5;
 const APPROACH_K = 8;
 const SNAP_EPSILON = 1;
-// Ate esta distancia, a garrafa e levada suavemente ate S1 (sem "salto").
-const SMOOTH_SNAP_MAX = 30;
+// Teto do delta entre quadros. Se um quadro demorar mais que isso, a esteira
+// anda proporcionalmente ao tempo real em vez de "ficar para tras" e saltar.
+const MAX_FRAME_DELTA_S = 0.25;
+// Velocidade de suavizacao do nivel de liquido (fracao por segundo).
+const FILL_EASE_PER_SECOND = 6;
 const FILL_DONE_PERCENT = 100;
 
 let socket;
@@ -63,14 +65,10 @@ let pendingCommand;
 let bottles = [];
 let bottleAtS1;
 let previousFrameTime;
+let previousLiquidTime;
 let beltPosition = 0;
 let activeDeceleration;
 let waitingForPlcStop = false;
-
-function bottleUnderEv() {
-    return Boolean(bottleAtS1)
-        && Math.abs(bottleAtS1.position - S1_BOTTLE_POSITION) <= EV_STOP_TOLERANCE;
-}
 
 function createBottle(position) {
     const bottle = document.createElement("div");
@@ -87,9 +85,15 @@ function createBottle(position) {
 
     bottle.append(liquid, image);
     elements.bottleContainer.appendChild(bottle);
-    const bottleState = { element: bottle, liquid, position, fillPercent: 0, filling: false, fillStartTime: 0 };
+    const bottleState = { element: bottle, liquid, position, fillPercent: 0, displayHeight: 0 };
     bottles.push(bottleState);
     return bottleState;
+}
+
+function resetBottleFill(bottle) {
+    bottle.fillPercent = 0;
+    bottle.displayHeight = 0;
+    bottle.liquid.style.height = "0";
 }
 
 function getLeadingBottle() {
@@ -137,6 +141,8 @@ function resetBottles() {
     bottleAtS1 = undefined;
     activeDeceleration = undefined;
     waitingForPlcStop = false;
+    previousFrameTime = undefined;
+    previousLiquidTime = undefined;
     beltPosition = 0;
     elements.line.style.setProperty("--belt-position", "0px");
     maintainBottleQueue();
@@ -145,8 +151,17 @@ function resetBottles() {
 function animateLine(frameTime) {
     const elapsed = previousFrameTime === undefined
         ? 0
-        : Math.min((frameTime - previousFrameTime) / 1000, 0.05);
+        : Math.min((frameTime - previousFrameTime) / 1000, MAX_FRAME_DELTA_S);
     previousFrameTime = frameTime;
+
+    // O nivel de liquido usa um relogio proprio, que avanca sempre. O relogio
+    // da esteira (previousFrameTime) e zerado enquanto a garrafa esta parada na
+    // EV para a esteira nao "saltar" ao religar; se o liquido usasse o mesmo
+    // relogio, a animacao de envase so aconteceria com a garrafa em movimento.
+    const liquidElapsed = previousLiquidTime === undefined
+        ? 0
+        : Math.min((frameTime - previousLiquidTime) / 1000, MAX_FRAME_DELTA_S);
+    previousLiquidTime = frameTime;
 
     const machineRunning = currentState.connected && currentState.plcReady && currentState.running;
     // Mecanismo de seguranca: com a EV atuando a esteira fica travada.
@@ -158,25 +173,28 @@ function animateLine(frameTime) {
     }
 
     for (const bottle of bottles) {
-        if (!bottle.filling) continue;
-        const progress = Math.min((performance.now() - bottle.fillStartTime) / FILL_ANIMATION_MS, 1);
-        bottle.liquid.style.height = `${progress * LIQUID_MAX_HEIGHT}px`;
-        if (progress >= 1) bottle.filling = false;
+        const targetHeight = (bottle.fillPercent / 100) * LIQUID_MAX_HEIGHT;
+        if (Math.abs(bottle.displayHeight - targetHeight) > 0.3) {
+            const ease = Math.min(1, liquidElapsed * FILL_EASE_PER_SECOND);
+            bottle.displayHeight += (targetHeight - bottle.displayHeight) * ease;
+            bottle.liquid.style.height = `${bottle.displayHeight}px`;
+        }
     }
 
-    if (activeDeceleration) {
+    if (activeDeceleration && machineRunning) {
         const leadingBottle = activeDeceleration.bottle;
         const distanceToStop = S1_BOTTLE_POSITION - leadingBottle.position;
         if (distanceToStop <= SNAP_EPSILON) {
             moveBottleQueue(Math.max(0, distanceToStop));
             activeDeceleration = undefined;
             if (leadingBottle !== bottleAtS1) {
-                leadingBottle.fillPercent = 0;
-                leadingBottle.liquid.style.height = "0";
+                resetBottleFill(leadingBottle);
                 bottleAtS1 = leadingBottle;
             }
             waitingForPlcStop = true;
         } else {
+            // Desaceleracao exponencial ate o ponto de parada, limitada a
+            // velocidade da esteira (sem "arrancada" e sem salto).
             const approachSpeed = Math.min(BOTTLE_SPEED, distanceToStop * APPROACH_K);
             moveBottleQueue(Math.min(approachSpeed * elapsed, distanceToStop));
         }
@@ -191,8 +209,7 @@ function animateLine(frameTime) {
             if (distanceToStop <= SNAP_EPSILON) {
                 moveBottleQueue(Math.max(0, distanceToStop));
                 if (leadingBottle !== bottleAtS1) {
-                    leadingBottle.fillPercent = 0;
-                    leadingBottle.liquid.style.height = "0";
+                    resetBottleFill(leadingBottle);
                     bottleAtS1 = leadingBottle;
                 }
                 waitingForPlcStop = true;
@@ -290,40 +307,39 @@ function connect() {
     socket.addEventListener("message", event => {
         const { type, ...message } = JSON.parse(event.data);
         if (type === "state") {
-            const newBottlePositioned = message.bottlePositioned && !currentState.bottlePositioned;
+            const previousState = currentState;
+            const newBottlePositioned = message.bottlePositioned && !previousState.bottlePositioned;
             if (newBottlePositioned) {
                 const positionedBottle = bottleAtS1 && Math.abs(bottleAtS1.position - S1_BOTTLE_POSITION) <= EV_STOP_TOLERANCE
                     ? bottleAtS1
                     : (getLeadingBottle() || createBottle(S1_BOTTLE_POSITION));
-                positionedBottle.fillPercent = 0;
-                positionedBottle.liquid.style.height = "0";
+                resetBottleFill(positionedBottle);
                 bottleAtS1 = positionedBottle;
-                // O PLC confirmou a parada. Se a garrafa ja esta proxima, ela
-                // desacelera suavemente ate S1 em vez de "saltar" de uma vez.
-                if (Math.abs(S1_BOTTLE_POSITION - positionedBottle.position) <= SMOOTH_SNAP_MAX) {
-                    activeDeceleration = { bottle: positionedBottle };
-                    waitingForPlcStop = false;
-                } else {
-                    positionedBottle.position = S1_BOTTLE_POSITION;
-                    positionedBottle.element.style.left = `${S1_BOTTLE_POSITION}px`;
-                    activeDeceleration = undefined;
-                    waitingForPlcStop = true;
-                }
+                activeDeceleration = { bottle: positionedBottle };
+                waitingForPlcStop = false;
+            } else if (message.bottlePositioned && !bottleAtS1) {
+                // Garante rastreio da garrafa sob a EV mesmo se a borda de
+                // subida de bottlePositioned for perdida entre leituras.
+                bottleAtS1 = getLeadingBottle() || createBottle(S1_BOTTLE_POSITION);
             }
             currentState = message;
-            if (bottleAtS1 && message.fillPercent > bottleAtS1.fillPercent) {
-                bottleAtS1.fillPercent = message.fillPercent;
+
+            // Nivel de liquido conduzido pelo PLC (fonte da verdade): so a
+            // garrafa sob a EV e atualizada, apenas enquanto o PLC indica
+            // presenca/envase. Ao terminar o envase, garante 100% para a
+            // garrafa sair cheia. O nivel nunca regride numa garrafa cheia.
+            if (bottleAtS1) {
+                const fillActive = Boolean(message.bottlePositioned) || Boolean(message.evOn);
+                if (fillActive) {
+                    const plcPercent = Math.max(0, Math.min(100, Number(message.fillPercent) || 0));
+                    if (plcPercent > bottleAtS1.fillPercent) {
+                        bottleAtS1.fillPercent = plcPercent;
+                    }
+                } else if (previousState.bottlePositioned || previousState.evOn) {
+                    bottleAtS1.fillPercent = FILL_DONE_PERCENT;
+                }
             }
 
-            // Regra (silenciosa): a EV so atua com a garrafa sob ela.
-            const evAllowed = Boolean(message.evOn) && bottleUnderEv();
-            if (evAllowed && !bottleAtS1.filling) {
-                bottleAtS1.filling = true;
-                const pct = bottleAtS1.fillPercent;
-                bottleAtS1.fillStartTime = pct > 0 && pct < 100
-                    ? performance.now() - (pct / 100) * FILL_ANIMATION_MS
-                    : performance.now();
-            }
             renderState();
         } else if (type === "commandResult") {
             pendingCommand = undefined;

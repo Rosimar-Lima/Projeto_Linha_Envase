@@ -173,13 +173,19 @@ async function readPlcState() {
         const bottlePositioned = await adsClient.readValue(symbols.bottlePositioned);
         const conveyorOn = await adsClient.readValue(symbols.conveyorOn);
         const evOn = await adsClient.readValue(symbols.evOn);
+        // As leituras ADS sao feitas uma a uma, entao `bottlePositioned` e `evOn`
+        // podem vir de scans diferentes do PLC. Como o PLC garante
+        // evOn => bottlePositioned no mesmo scan, uma releitura confirmatoria
+        // evita falso positivo de intertravamento quando a borda de subida
+        // cai no meio da janela de leitura.
+        const bottlePositionedConfirm = await adsClient.readValue(symbols.bottlePositioned);
         const atOn = await adsClient.readValue(symbols.atOn);
         const fillPercent = await adsClient.readValue(symbols.fillPercent);
         const filled = await adsClient.readValue(symbols.filled);
         const capped = await adsClient.readValue(symbols.capped);
         const total = await adsClient.readValue(symbols.total);
 
-        const bottlePositionedValue = Boolean(bottlePositioned.value);
+        const bottlePositionedValue = Boolean(bottlePositioned.value) || Boolean(bottlePositionedConfirm.value);
         const evOnRequested = Boolean(evOn.value);
 
         // Regra de intertravamento: a EV so atua com a garrafa sob ela.

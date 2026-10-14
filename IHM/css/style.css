@@ -179,7 +179,6 @@ body{
     border-radius:0 0 12px 12px;
     background:linear-gradient(to right, #58cfff, #9be8ff, #58cfff);
     opacity:0.8;
-    transition:height 0.2s linear;
     z-index:3;
 }
 
