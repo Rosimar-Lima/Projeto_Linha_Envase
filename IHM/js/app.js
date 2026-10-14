@@ -373,7 +373,6 @@ function sendCommand(command) {
         return;
     }
 
-    if (command === "start") resetBottles();
     pendingCommand = command;
     clearError();
     renderState();
