@@ -12,6 +12,8 @@ const elements = {
     fillStatus: document.querySelector("#statusEnvase span"),
     capStatus: document.getElementById("estadoAplicacao"),
     capper: document.getElementById("aplicadora"),
+    sensorS1: document.getElementById("sensorS1"),
+    sensorS2: document.getElementById("sensorS2"),
     instructionsButton: document.getElementById("btnInstrucoes"),
     instructionOptions: document.getElementById("opcoesInstrucoes"),
     instructionPanel: document.getElementById("painelInstrucoes"),
@@ -23,6 +25,8 @@ const elements = {
 
 const LINE_WIDTH = 1200;
 const S1_CENTER = 435;
+// A AT fica um passo de garrafa (330 px) a direita da EV: 435 + 330 = 765.
+const S2_CENTER = S1_CENTER + 330;
 const BOTTLE_WIDTH = 60;
 const S1_BOTTLE_POSITION = S1_CENTER - BOTTLE_WIDTH / 2;
 const BOTTLE_SPACING = 330;
@@ -51,6 +55,7 @@ let currentState = {
     runtimeState: "Indisponível",
     running: false,
     sensorS1: false,
+    sensorS2: false,
     bottlePositioned: false,
     conveyorOn: false,
     evOn: false,
@@ -227,6 +232,20 @@ function animateLine(frameTime) {
         previousFrameTime = undefined;
     }
 
+    // Brilho dos sensores por deteccao real: acende quando a garrafa cobre o
+    // sensor e segura ate ela sair, evitando apagar/ascender no meio do ciclo.
+    // O sinal do PLC (bSensorS1/bSensorS2) tambem mantem o sensor aceso.
+    const plcReady = currentState.connected && currentState.plcReady;
+    const sensors = [
+        { element: elements.sensorS1, center: S1_CENTER, signal: currentState.sensorS1 },
+        { element: elements.sensorS2, center: S2_CENTER, signal: currentState.sensorS2 }
+    ];
+    for (const sensor of sensors) {
+        const detected = bottles.some(bottle =>
+            bottle.position <= sensor.center && bottle.position + BOTTLE_WIDTH >= sensor.center);
+        sensor.element.classList.toggle("detectando", Boolean(plcReady) && (Boolean(sensor.signal) || detected));
+    }
+
     requestAnimationFrame(animateLine);
 }
 
@@ -241,7 +260,6 @@ function renderState() {
     const plcReady = connected && currentState.plcReady;
     const running = plcReady && currentState.running;
     const plcStatus = currentState.plcStatus || (plcReady ? "ready" : "checking");
-    elements.line.classList.toggle("transportando", plcReady && running && currentState.conveyorOn);
     elements.capper.classList.toggle("aplicando", plcReady && currentState.atOn);
     elements.connectionLight.classList.toggle("conectado", plcReady);
     elements.connectionLight.classList.toggle("aguardando", ["checking", "stopped"].includes(plcStatus));
@@ -285,8 +303,10 @@ function renderState() {
     elements.capStatus.textContent = !plcReady
         ? "Estado indisponível"
         : currentState.atOn
-            ? "Aplicando tampa"
-            : "Aguardando garrafa";
+            ? "Tampando garrafa"
+            : currentState.sensorS2
+                ? "Garrafa em S2"
+                : "Aguardando garrafa";
 }
 
 function showError(message) {

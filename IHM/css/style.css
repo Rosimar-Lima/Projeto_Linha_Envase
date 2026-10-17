@@ -108,7 +108,7 @@ body{
     z-index:4;
 }
 
-#sensorS1.detectando{
+.sensorPresenca.detectando{
     filter:drop-shadow(0 0 8px #2caa4b);
 }
 

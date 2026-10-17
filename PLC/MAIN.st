@@ -19,6 +19,11 @@ VAR
     bFirstCycle : BOOL := TRUE;
     bFillDone : BOOL := FALSE;
     bBeltStopped : BOOL := FALSE;
+
+    (* Estacao AT (aplicadora de tampa): ha uma garrafa em S2 e ela ja foi
+       tampada neste ciclo de parada? *)
+    bS2Occupied : BOOL := FALSE;
+    bCapped : BOOL := FALSE;
 END_VAR
 
 IF bFirstCycle THEN
@@ -27,11 +32,13 @@ IF bFirstCycle THEN
     GVL_HMI.bCmdReset := FALSE;
     GVL_HMI.bRunning := FALSE;
     GVL_HMI.bSensorS1 := FALSE;
+    GVL_HMI.bSensorS2 := FALSE;
     GVL_HMI.bBottlePositioned := FALSE;
     GVL_HMI.bConveyorOn := FALSE;
     GVL_HMI.bEvOn := FALSE;
     GVL_HMI.bAtOn := FALSE;
     GVL_HMI.bEvInterlock := FALSE;
+    GVL_HMI.bAtInterlock := FALSE;
     GVL_HMI.nFillPercent := 0;
     nStep := 0;
     nStepPrev := 255;
@@ -39,6 +46,8 @@ IF bFirstCycle THEN
     tClockPrev := T#0MS;
     bFillDone := FALSE;
     bBeltStopped := FALSE;
+    bS2Occupied := FALSE;
+    bCapped := FALSE;
     bFirstCycle := FALSE;
 END_IF
 
@@ -68,6 +77,7 @@ END_IF
 (* Reset: somente com a linha parada. Zera contadores e prepara o reinicio. *)
 IF fbReset.Q AND NOT GVL_HMI.bRunning THEN
     GVL_HMI.nBottlesFilled := 0;
+    GVL_HMI.nBottlesCapped := 0;
     GVL_HMI.nProductionTotal := 0;
     GVL_HMI.nFillPercent := 0;
     nStep := 0;
@@ -75,7 +85,12 @@ IF fbReset.Q AND NOT GVL_HMI.bRunning THEN
     tStep := T#0MS;
     bFillDone := FALSE;
     bBeltStopped := FALSE;
+    bS2Occupied := FALSE;
+    bCapped := FALSE;
     GVL_HMI.bSensorS1 := FALSE;
+    GVL_HMI.bSensorS2 := FALSE;
+    GVL_HMI.bAtOn := FALSE;
+    GVL_HMI.bAtInterlock := FALSE;
     GVL_HMI.bConveyorOn := FALSE;
 END_IF
 
@@ -92,9 +107,10 @@ END_IF
 
 IF GVL_HMI.bRunning THEN
     CASE nStep OF
-        0:  (* Transporte inicial ate o sensor S1 *)
+        0:  (* Transporte inicial ate o sensor S1 (ainda sem garrafa em S2) *)
             GVL_HMI.bConveyorOn := TRUE;
             GVL_HMI.bSensorS1 := FALSE;
+            GVL_HMI.bSensorS2 := FALSE;
             IF tStep >= T#3S270MS THEN
                 nStep := 1;
             END_IF
@@ -102,32 +118,52 @@ IF GVL_HMI.bRunning THEN
         1:  (* S1 acusa a presenca da garrafa; comanda a parada da esteira *)
             GVL_HMI.bConveyorOn := FALSE;
             GVL_HMI.bSensorS1 := TRUE;
+            GVL_HMI.bSensorS2 := bS2Occupied;
             IF tStep >= T#460MS THEN
                 bBeltStopped := TRUE;
                 bFillDone := FALSE;
+                bCapped := FALSE;
                 GVL_HMI.nFillPercent := 0;
+                GVL_HMI.bSensorS2 := bS2Occupied;
                 nStep := 2;
             END_IF
 
-        2:  (* Esteira parada e S1 com garrafa: a EV atua *)
+        2:  (* Esteira parada: a EV enche a garrafa de S1 e a AT tampa a de S2 *)
             GVL_HMI.bConveyorOn := FALSE;
             GVL_HMI.bSensorS1 := TRUE;
+            GVL_HMI.bSensorS2 := bS2Occupied;
 
+            (* Envase da garrafa posicionada em S1 *)
             IF tStep >= T#2S THEN
                 GVL_HMI.nFillPercent := 100;
                 GVL_HMI.nBottlesFilled := GVL_HMI.nBottlesFilled + 1;
                 GVL_HMI.nProductionTotal := GVL_HMI.nProductionTotal + 1;
                 bFillDone := TRUE;
-                nStep := 3;
             ELSE
                 GVL_HMI.nFillPercent := TO_USINT(TIME_TO_DINT(tStep) / 20);
+            END_IF
+
+            (* Tampagem concluida apos o tempo do cilindro; a garrafa de S2
+               fica pronta e a AT apenas aguarda a esteira voltar a andar. *)
+            IF bS2Occupied AND NOT bCapped AND tStep >= T#1S200MS THEN
+                bCapped := TRUE;
+                GVL_HMI.nBottlesCapped := GVL_HMI.nBottlesCapped + 1;
+            END_IF
+
+            (* Avanca quando o envase terminou e a tampagem (se houver) concluiu *)
+            IF bFillDone AND (NOT bS2Occupied OR bCapped) THEN
+                nStep := 3;
             END_IF
 
         3:  (* Garrafa cheia: a esteira religa e a garrafa deixa o sensor *)
             GVL_HMI.bConveyorOn := TRUE;
             GVL_HMI.bSensorS1 := FALSE;
+            GVL_HMI.bSensorS2 := FALSE;
             IF tStep >= T#2S770MS THEN
                 bBeltStopped := FALSE;
+                (* A garrafa envasada acabou de chegar em S2: a AT tera o que
+                   tampgar na proxima parada da esteira. *)
+                bS2Occupied := TRUE;
                 nStep := 1;
             END_IF
 
@@ -147,5 +183,8 @@ GVL_HMI.bBottlePositioned := GVL_HMI.bSensorS1 AND bBeltStopped;
 GVL_HMI.bEvInterlock := GVL_HMI.bSensorS1 AND bBeltStopped;
 GVL_HMI.bEvOn := GVL_HMI.bRunning AND GVL_HMI.bEvInterlock AND NOT bFillDone;
 
-(* Estacao AT removida nesta etapa (sem atuacao). *)
-GVL_HMI.bAtOn := FALSE;
+(* Regra da AT (espelha a EV): o cilindro so desce se, e somente se, S2 acusa a
+   garrafa e a esteira esta parada. Terminada a tampagem, o cilindro sobe e a AT
+   aguarda a esteira voltar a andar. *)
+GVL_HMI.bAtInterlock := GVL_HMI.bSensorS2 AND bBeltStopped;
+GVL_HMI.bAtOn := GVL_HMI.bRunning AND GVL_HMI.bAtInterlock AND NOT bCapped;

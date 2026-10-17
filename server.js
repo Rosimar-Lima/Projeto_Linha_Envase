@@ -24,6 +24,7 @@ const symbols = {
     reset: "GVL_HMI.bCmdReset",
     running: "GVL_HMI.bRunning",
     sensorS1: "GVL_HMI.bSensorS1",
+    sensorS2: "GVL_HMI.bSensorS2",
     bottlePositioned: "GVL_HMI.bBottlePositioned",
     conveyorOn: "GVL_HMI.bConveyorOn",
     evOn: "GVL_HMI.bEvOn",
@@ -49,6 +50,7 @@ let plcStateReadInProgress = false;
 let adsWriteInProgress = false;
 let adsWriteQueue = Promise.resolve();
 let lastEvBlocked = false;
+let lastAtBlocked = false;
 let lastState = {
     connected: false,
     plcReady: false,
@@ -56,6 +58,7 @@ let lastState = {
     runtimeState: "Indisponível",
     running: false,
     sensorS1: false,
+    sensorS2: false,
     bottlePositioned: false,
     conveyorOn: false,
     evOn: false,
@@ -69,7 +72,10 @@ let lastState = {
 
 app.use(express.static(ihmPath, {
     setHeaders: (res, filePath) => {
-        if (filePath.endsWith(".html")) {
+        // HTML/CSS/JS sem cache: o navegador revalida a cada carregamento e o
+        // Express responde 304 quando nada mudou. Isso dispensa bump manual de
+        // `?v=` no index.html a cada edicao.
+        if (/\.(?:html|css|js)$/.test(filePath)) {
             res.setHeader("Cache-Control", "no-cache");
         }
     }
@@ -170,6 +176,7 @@ async function readPlcState() {
 
         const running = await adsClient.readValue(symbols.running);
         const sensorS1 = await adsClient.readValue(symbols.sensorS1);
+        const sensorS2 = await adsClient.readValue(symbols.sensorS2);
         const bottlePositioned = await adsClient.readValue(symbols.bottlePositioned);
         const conveyorOn = await adsClient.readValue(symbols.conveyorOn);
         const evOn = await adsClient.readValue(symbols.evOn);
@@ -180,6 +187,10 @@ async function readPlcState() {
         // cai no meio da janela de leitura.
         const bottlePositionedConfirm = await adsClient.readValue(symbols.bottlePositioned);
         const atOn = await adsClient.readValue(symbols.atOn);
+        // Releitura confirmatoria de S2: `atOn` e `sensorS2` vem do mesmo scan do
+        // PLC, mas como sao lidos em momentos diferentes a borda pode cair no meio
+        // da janela e bloquear a AT indevidamente por um ciclo.
+        const sensorS2Confirm = await adsClient.readValue(symbols.sensorS2);
         const fillPercent = await adsClient.readValue(symbols.fillPercent);
         const filled = await adsClient.readValue(symbols.filled);
         const capped = await adsClient.readValue(symbols.capped);
@@ -187,6 +198,8 @@ async function readPlcState() {
 
         const bottlePositionedValue = Boolean(bottlePositioned.value) || Boolean(bottlePositionedConfirm.value);
         const evOnRequested = Boolean(evOn.value);
+        const sensorS2Value = Boolean(sensorS2.value) || Boolean(sensorS2Confirm.value);
+        const atOnRequested = Boolean(atOn.value);
 
         // Regra de intertravamento: a EV so atua com a garrafa sob ela.
         // A ponte nunca publica evOn=true sem bottlePositioned=true.
@@ -197,6 +210,15 @@ async function readPlcState() {
             if (evBlocked) console.warn("Intertravamento EV: pedido de envase sem garrafa posicionada; EV bloqueada.");
         }
 
+        // Regra de intertravamento da AT: o cilindro so desce com a garrafa em S2.
+        // A ponte nunca publica atOn=true sem sensorS2=true.
+        const atBlocked = atOnRequested && !sensorS2Value;
+        const safeAtOn = atOnRequested && sensorS2Value;
+        if (atBlocked !== lastAtBlocked) {
+            lastAtBlocked = atBlocked;
+            if (atBlocked) console.warn("Intertravamento AT: pedido de tampagem sem garrafa em S2; AT bloqueada.");
+        }
+
         publishState({
             connected: true,
             plcReady: true,
@@ -204,11 +226,12 @@ async function readPlcState() {
             runtimeState: runtime.adsStateStr,
             running: Boolean(running.value),
             sensorS1: Boolean(sensorS1.value),
+            sensorS2: sensorS2Value,
             bottlePositioned: bottlePositionedValue,
             conveyorOn: Boolean(conveyorOn.value),
             evOn: safeEvOn,
             evBlocked,
-            atOn: Boolean(atOn.value),
+            atOn: safeAtOn,
             fillPercent: Math.max(0, Math.min(100, Number(fillPercent.value))),
             filled: Number(filled.value),
             capped: Number(capped.value),

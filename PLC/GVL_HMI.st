@@ -6,6 +6,7 @@ VAR_GLOBAL
 
     bRunning : BOOL;
     bSensorS1 : BOOL;
+    bSensorS2 : BOOL;
     bBottlePositioned : BOOL;
     bConveyorOn : BOOL;
     bEvOn : BOOL;
@@ -14,6 +15,10 @@ VAR_GLOBAL
     (* Intertravamento da valvula de envase (EV):
        S1 acusa a presenca da garrafa e a esteira esta parada. *)
     bEvInterlock : BOOL;
+
+    (* Intertravamento da aplicadora de tampa (AT), espelhando a EV:
+       S2 acusa a presenca da garrafa e a esteira esta parada. *)
+    bAtInterlock : BOOL;
 
     nFillPercent : USINT;
     nBottlesFilled : UDINT;
