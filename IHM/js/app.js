@@ -20,7 +20,8 @@ const elements = {
     instructionText: document.getElementById("textoInstrucao"),
     lineViewport: document.getElementById("linhaViewport"),
     line: document.getElementById("linha"),
-    bottleContainer: document.getElementById("garrafas")
+    bottleContainer: document.getElementById("garrafas"),
+    commFailureOverlay: document.getElementById("overlayFalhaComunicacao")
 };
 
 const LINE_WIDTH = 1200;
@@ -74,6 +75,20 @@ let previousLiquidTime;
 let beltPosition = 0;
 let activeDeceleration;
 let waitingForPlcStop = false;
+// Estado travado da faixa de falha de comunicacao: so limpa quando o PLC
+// confirma comunicacao (ready/stopped), evitando piscar durante reconexao.
+let commFailureActive = false;
+
+function updateCommFailureOverlay(plcStatus) {
+    if (plcStatus === "offline" || plcStatus === "fault") {
+        commFailureActive = true;
+    } else if (plcStatus === "ready" || plcStatus === "stopped") {
+        commFailureActive = false;
+    }
+    if (elements.commFailureOverlay) {
+        elements.commFailureOverlay.hidden = !commFailureActive;
+    }
+}
 
 function createBottle(position) {
     const bottle = document.createElement("div");
@@ -260,6 +275,7 @@ function renderState() {
     const plcReady = connected && currentState.plcReady;
     const running = plcReady && currentState.running;
     const plcStatus = currentState.plcStatus || (plcReady ? "ready" : "checking");
+    updateCommFailureOverlay(plcStatus);
     elements.capper.classList.toggle("aplicando", plcReady && currentState.atOn);
     elements.connectionLight.classList.toggle("conectado", plcReady);
     elements.connectionLight.classList.toggle("aguardando", ["checking", "stopped"].includes(plcStatus));

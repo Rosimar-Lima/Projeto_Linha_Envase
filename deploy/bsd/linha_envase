@@ -1,0 +1,129 @@
+#!/bin/sh
+#
+# PROVIDE: linha_envase
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+#
+# Servico da ponte ADS (server.js) da IHM Linha de Envase.
+#
+# Ajuste em /etc/rc.conf:
+#   linha_envase_enable="YES"
+#   linha_envase_dir="/opt/linha-envase"
+#   (opcional) linha_envase_user="root"
+#   (opcional) linha_envase_node="/usr/local/bin/node"
+#   (opcional) linha_envase_log="/var/log/linha_envase.log"
+
+# shellcheck disable=SC2034
+# As variaveis abaixo (rcvar, start_precmd, procname, command, command_args)
+# sao consumidas pelo rc.subr em run_rc_command, por isso parecem "nao usadas".
+# shellcheck source=/dev/null
+. /etc/rc.subr
+
+name="linha_envase"
+rcvar="linha_envase_enable"
+
+load_rc_config "$name"
+
+: "${linha_envase_enable:="NO"}"
+: "${linha_envase_dir:="/opt/linha-envase"}"
+: "${linha_envase_user:="root"}"
+: "${linha_envase_node:="/usr/local/bin/node"}"
+: "${linha_envase_log:="/var/log/linha_envase.log"}"
+
+pidfile="/var/run/${name}.pid"
+
+start_precmd="linha_envase_precmd"
+stop_cmd="linha_envase_stop"
+status_cmd="linha_envase_status"
+
+linha_envase_precmd()
+{
+    if [ ! -f "${linha_envase_dir}/server.js" ]; then
+        err 1 "${name}: server.js nao encontrado em ${linha_envase_dir}"
+    fi
+    if [ ! -f "${linha_envase_node}" ]; then
+        err 1 "${name}: node nao encontrado em ${linha_envase_node}"
+    fi
+    if [ ! -f "${linha_envase_dir}/.env" ]; then
+        warn "${name}: .env ausente em ${linha_envase_dir}; usando defaults"
+    fi
+}
+
+# O servico e supervisionado pelo daemon(8) com -r -P: o pid gravado em
+# ${pidfile} e o do SUPERVISOR, nao o do node. Como ${procname} (=node) difere
+# do comando do supervisor ("daemon: ..."), o stop/status padrao do rc.subr nao
+# casa o processo (o stop falha com "not running?" e o restart nao sobe de
+# novo). Por isso definimos stop_cmd/status_cmd proprios, que usam o pid do
+# supervisor e garantem o encerramento do filho supervisionado.
+linha_envase_stop()
+{
+    _lpid=""
+    if [ -f "${pidfile}" ]; then
+        _lpid=$(cat "${pidfile}" 2>/dev/null)
+    fi
+
+    # Fallback: sem pidfile, localiza o supervisor pelo filho (node server.js).
+    if [ -z "${_lpid}" ]; then
+        _child=$(pgrep -f "${linha_envase_dir}/server.js" 2>/dev/null | head -n 1)
+        if [ -n "${_child}" ]; then
+            _lpid=$(ps -o ppid= -p "${_child}" 2>/dev/null | tr -d ' ')
+        fi
+    fi
+
+    if [ -z "${_lpid}" ]; then
+        return 1
+    fi
+
+    echo "Stopping ${name}."
+
+    kill -TERM "${_lpid}" 2>/dev/null
+
+    _i=0
+    while [ "${_i}" -lt 30 ] && kill -0 "${_lpid}" 2>/dev/null; do
+        sleep 0.2
+        _i=$((_i + 1))
+    done
+
+    if kill -0 "${_lpid}" 2>/dev/null; then
+        warn "${name}: supervisor (pid ${_lpid}) nao encerrou; enviando SIGKILL."
+        kill -KILL "${_lpid}" 2>/dev/null
+        sleep 0.3
+    fi
+
+    # Garante que o processo node supervisionado tambem morreu.
+    _child=$(pgrep -f "${linha_envase_dir}/server.js" 2>/dev/null)
+    if [ -n "${_child}" ]; then
+        kill -TERM ${_child} 2>/dev/null
+        sleep 1
+        _child=$(pgrep -f "${linha_envase_dir}/server.js" 2>/dev/null)
+        if [ -n "${_child}" ]; then
+            kill -KILL ${_child} 2>/dev/null
+        fi
+    fi
+
+    rm -f "${pidfile}"
+    return 0
+}
+
+linha_envase_status()
+{
+    _lpid=""
+    if [ -f "${pidfile}" ]; then
+        _lpid=$(cat "${pidfile}" 2>/dev/null)
+    fi
+    if [ -n "${_lpid}" ] && kill -0 "${_lpid}" 2>/dev/null; then
+        echo "${name} is running as pid ${_lpid}."
+        return 0
+    fi
+    echo "${name} is not running."
+    return 1
+}
+
+# /usr/sbin/daemon: -r (supervisiona e reinicia se o processo morrer),
+# -P (pidfile do supervisor; com -r o stop precisa sinalizar o supervisor,
+# senao o filho e reiniciado), -o (log), -u (usuario).
+procname="${linha_envase_node}"
+command="/usr/sbin/daemon"
+command_args="-r -P ${pidfile} -o ${linha_envase_log} -u ${linha_envase_user} ${linha_envase_node} ${linha_envase_dir}/server.js"
+
+run_rc_command "$1"

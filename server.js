@@ -1,6 +1,10 @@
-require("dotenv").config();
-
 const path = require("node:path");
+
+// Carrega o .env ao lado do server.js, independente do diretorio de trabalho.
+// Quando o servico sobe via daemon/Task Scheduler o cwd nao e a pasta do projeto.
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+
+const fs = require("node:fs");
 const http = require("node:http");
 const express = require("express");
 const { WebSocketServer, WebSocket } = require("ws");
@@ -8,32 +12,50 @@ const { Client } = require("ads-client");
 
 const config = {
     host: process.env.HOST || "127.0.0.1",
-    port: Number(process.env.PORT || 3000),
-    targetAmsNetId: process.env.ADS_TARGET_AMS_NET_ID || "39.90.64.65.1.1",
-    targetAdsPort: Number(process.env.ADS_TARGET_PORT || 851)
+    port: Number(process.env.PORT || 3000)
 };
 
-const ADS_RECREATE_AFTER_MS = Number(process.env.ADS_RECREATE_AFTER_MS || 15000);
-// Intervalo de leitura do PLC. Precisa ser bem menor que a menor etapa do ciclo
-// (step1 = 0,46 s) para a IHM acompanhar a esteira sem atraso perceptível.
-const ADS_POLL_INTERVAL_MS = Number(process.env.ADS_POLL_INTERVAL_MS || 200);
+const REQUIRED_SYMBOLS = [
+    "start", "stop", "reset", "running", "sensorS1", "sensorS2",
+    "bottlePositioned", "conveyorOn", "evOn", "atOn", "fillPercent",
+    "filled", "capped", "total"
+];
 
-const symbols = {
-    start: "GVL_HMI.bCmdStart",
-    stop: "GVL_HMI.bCmdStop",
-    reset: "GVL_HMI.bCmdReset",
-    running: "GVL_HMI.bRunning",
-    sensorS1: "GVL_HMI.bSensorS1",
-    sensorS2: "GVL_HMI.bSensorS2",
-    bottlePositioned: "GVL_HMI.bBottlePositioned",
-    conveyorOn: "GVL_HMI.bConveyorOn",
-    evOn: "GVL_HMI.bEvOn",
-    atOn: "GVL_HMI.bAtOn",
-    fillPercent: "GVL_HMI.nFillPercent",
-    filled: "GVL_HMI.nBottlesFilled",
-    capped: "GVL_HMI.nBottlesCapped",
-    total: "GVL_HMI.nProductionTotal"
-};
+function loadPlcConfig() {
+    const filePath = path.join(__dirname, "plc.config.json");
+    let fileConfig;
+    try {
+        fileConfig = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch (error) {
+        throw new Error(`Falha ao carregar plc.config.json: ${error.message}`);
+    }
+
+    const connection = fileConfig.connection || {};
+    const command = fileConfig.command || {};
+    const symbols = fileConfig.symbols || {};
+
+    const missingSymbols = REQUIRED_SYMBOLS.filter(key => typeof symbols[key] !== "string" || !symbols[key].trim());
+    if (missingSymbols.length) {
+        throw new Error(`plc.config.json sem simbolos obrigatorios: ${missingSymbols.join(", ")}`);
+    }
+    if (!connection.targetAmsNetId) {
+        throw new Error("plc.config.json sem connection.targetAmsNetId.");
+    }
+
+    return {
+        targetAmsNetId: process.env.ADS_TARGET_AMS_NET_ID || connection.targetAmsNetId,
+        targetAdsPort: Number(process.env.ADS_TARGET_PORT || connection.targetAdsPort || 851),
+        timeoutMs: Number(process.env.ADS_TIMEOUT_MS || connection.timeoutMs || 5000),
+        recreateAfterMs: Number(process.env.ADS_RECREATE_AFTER_MS || connection.recreateAfterMs || 15000),
+        // Intervalo de leitura do PLC. Precisa ser bem menor que a menor etapa do ciclo
+        // (step1 = 0,46 s) para a IHM acompanhar a esteira sem atraso perceptível.
+        pollIntervalMs: Number(process.env.ADS_POLL_INTERVAL_MS || connection.pollIntervalMs || 200),
+        pulseMs: Number(command.pulseMs || 120),
+        symbols
+    };
+}
+
+const plc = loadPlcConfig();
 
 const app = express();
 const server = http.createServer(app);
@@ -95,16 +117,16 @@ async function connectAds() {
     if (Date.now() < nextAdsRetryAt) return false;
     if (adsClient) {
         if (adsLostAt === 0) adsLostAt = Date.now();
-        if (Date.now() - adsLostAt < ADS_RECREATE_AFTER_MS) return false;
+        if (Date.now() - adsLostAt < plc.recreateAfterMs) return false;
         await adsClient.disconnect().catch(() => {});
         adsClient = undefined;
         adsLostAt = 0;
     }
     adsConnecting = true;
     const client = new Client({
-        targetAmsNetId: config.targetAmsNetId,
-        targetAdsPort: config.targetAdsPort,
-        timeoutDelay: Number(process.env.ADS_TIMEOUT_MS || 5000),
+        targetAmsNetId: plc.targetAmsNetId,
+        targetAdsPort: plc.targetAdsPort,
+        timeoutDelay: plc.timeoutMs,
         autoReconnect: true
     });
     adsClient = client;
@@ -116,13 +138,22 @@ async function connectAds() {
         publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false });
         console.warn("Conexão ADS perdida; aguardando reconexão automática.");
     });
-    client.on("reconnect", () => {
+    client.on("reconnect", async () => {
         if (adsClient !== client) return;
         adsConnected = true;
         nextAdsRetryAt = 0;
         adsLostAt = 0;
         publishState({ ...lastState, connected: true, plcReady: false, plcStatus: "checking", running: false });
-        console.log(`ADS reconectado: ${config.targetAmsNetId}:${config.targetAdsPort}`);
+        console.log(`ADS reconectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
+        // O PLC pode ter sido recompilado/baixado durante a queda (novo boot project).
+        // Se a tabela de simbolos mudou, os offsets em cache ficam invalidos e as
+        // leituras retornam valores errados. Recarregar o cache garante handles atuais.
+        try {
+            await client.cacheSymbols();
+            await client.cacheDataTypes();
+        } catch (error) {
+            console.warn(`Cache ADS indisponível após reconexão: ${error.message}`);
+        }
     });
 
     try {
@@ -131,7 +162,7 @@ async function connectAds() {
         nextAdsRetryAt = 0;
         adsLostAt = 0;
         publishState({ ...lastState, connected: adsConnected, plcReady: false, plcStatus: "checking", running: false });
-        console.log(`ADS conectado: ${config.targetAmsNetId}:${config.targetAdsPort}`);
+        console.log(`ADS conectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         try {
             await client.cacheSymbols();
             await client.cacheDataTypes();
@@ -174,27 +205,27 @@ async function readPlcState() {
             return;
         }
 
-        const running = await adsClient.readValue(symbols.running);
-        const sensorS1 = await adsClient.readValue(symbols.sensorS1);
-        const sensorS2 = await adsClient.readValue(symbols.sensorS2);
-        const bottlePositioned = await adsClient.readValue(symbols.bottlePositioned);
-        const conveyorOn = await adsClient.readValue(symbols.conveyorOn);
-        const evOn = await adsClient.readValue(symbols.evOn);
+        const running = await adsClient.readValue(plc.symbols.running);
+        const sensorS1 = await adsClient.readValue(plc.symbols.sensorS1);
+        const sensorS2 = await adsClient.readValue(plc.symbols.sensorS2);
+        const bottlePositioned = await adsClient.readValue(plc.symbols.bottlePositioned);
+        const conveyorOn = await adsClient.readValue(plc.symbols.conveyorOn);
+        const evOn = await adsClient.readValue(plc.symbols.evOn);
         // As leituras ADS sao feitas uma a uma, entao `bottlePositioned` e `evOn`
         // podem vir de scans diferentes do PLC. Como o PLC garante
         // evOn => bottlePositioned no mesmo scan, uma releitura confirmatoria
         // evita falso positivo de intertravamento quando a borda de subida
         // cai no meio da janela de leitura.
-        const bottlePositionedConfirm = await adsClient.readValue(symbols.bottlePositioned);
-        const atOn = await adsClient.readValue(symbols.atOn);
+        const bottlePositionedConfirm = await adsClient.readValue(plc.symbols.bottlePositioned);
+        const atOn = await adsClient.readValue(plc.symbols.atOn);
         // Releitura confirmatoria de S2: `atOn` e `sensorS2` vem do mesmo scan do
         // PLC, mas como sao lidos em momentos diferentes a borda pode cair no meio
         // da janela e bloquear a AT indevidamente por um ciclo.
-        const sensorS2Confirm = await adsClient.readValue(symbols.sensorS2);
-        const fillPercent = await adsClient.readValue(symbols.fillPercent);
-        const filled = await adsClient.readValue(symbols.filled);
-        const capped = await adsClient.readValue(symbols.capped);
-        const total = await adsClient.readValue(symbols.total);
+        const sensorS2Confirm = await adsClient.readValue(plc.symbols.sensorS2);
+        const fillPercent = await adsClient.readValue(plc.symbols.fillPercent);
+        const filled = await adsClient.readValue(plc.symbols.filled);
+        const capped = await adsClient.readValue(plc.symbols.capped);
+        const total = await adsClient.readValue(plc.symbols.total);
 
         const bottlePositionedValue = Boolean(bottlePositioned.value) || Boolean(bottlePositionedConfirm.value);
         const evOnRequested = Boolean(evOn.value);
@@ -272,7 +303,7 @@ function queueAdsWrite(write) {
 }
 
 async function pulseCommand(command) {
-    const symbol = symbols[command];
+    const symbol = plc.symbols[command];
     if (!symbol) throw new Error("Comando desconhecido.");
 
     return queueAdsWrite(async client => {
@@ -286,13 +317,13 @@ async function pulseCommand(command) {
             }
 
             if (command === "reset") {
-                const running = await client.readValue(symbols.running);
+                const running = await client.readValue(plc.symbols.running);
                 if (running.value) throw new Error("Desligue a linha antes de zerar os contadores.");
             }
 
             commandMayBeActive = true;
             await client.writeValue(symbol, true);
-            await delay(120);
+            await delay(plc.pulseMs);
             await client.writeValue(symbol, false);
         } finally {
             if (commandMayBeActive && adsConnected) await client.writeValue(symbol, false).catch(() => {});
@@ -319,11 +350,11 @@ sockets.on("connection", socket => {
     });
 });
 
-const stateInterval = setInterval(readPlcState, ADS_POLL_INTERVAL_MS);
+const stateInterval = setInterval(readPlcState, plc.pollIntervalMs);
 
 server.listen(config.port, config.host, () => {
     console.log(`IHM disponível em http://${config.host}:${config.port}`);
-    console.log(`Rota TwinCAT local -> ${config.targetAmsNetId}:${config.targetAdsPort}`);
+    console.log(`Rota TwinCAT local -> ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
 });
 
 async function shutdown(signal) {

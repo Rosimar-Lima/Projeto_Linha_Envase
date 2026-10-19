@@ -1,0 +1,28 @@
+{
+    "connection": {
+        "targetAmsNetId": "39.90.64.65.1.1",
+        "targetAdsPort": 851,
+        "timeoutMs": 5000,
+        "recreateAfterMs": 15000,
+        "pollIntervalMs": 200
+    },
+    "command": {
+        "pulseMs": 120
+    },
+    "symbols": {
+        "start": "GVL_HMI.bCmdStart",
+        "stop": "GVL_HMI.bCmdStop",
+        "reset": "GVL_HMI.bCmdReset",
+        "running": "GVL_HMI.bRunning",
+        "sensorS1": "GVL_HMI.bSensorS1",
+        "sensorS2": "GVL_HMI.bSensorS2",
+        "bottlePositioned": "GVL_HMI.bBottlePositioned",
+        "conveyorOn": "GVL_HMI.bConveyorOn",
+        "evOn": "GVL_HMI.bEvOn",
+        "atOn": "GVL_HMI.bAtOn",
+        "fillPercent": "GVL_HMI.nFillPercent",
+        "filled": "GVL_HMI.nBottlesFilled",
+        "capped": "GVL_HMI.nBottlesCapped",
+        "total": "GVL_HMI.nProductionTotal"
+    }
+}

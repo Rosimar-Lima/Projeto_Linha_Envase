@@ -45,7 +45,12 @@ npm start
 
 Para desenvolvimento, use `npm run dev` (nodemon): reinicia o serviço automaticamente ao salvar `server.js` ou `.env`. Em ambos os casos, para parar aperte `Ctrl+C`.
 
-Abra `http://127.0.0.1:3000`. Opcionalmente, crie um arquivo `.env` (não versionado) para sobrescrever os valores padrão: `HOST`, `PORT`, `ADS_TARGET_AMS_NET_ID`, `ADS_TARGET_PORT` e `ADS_POLL_INTERVAL_MS`. O serviço usa o roteador ADS local do TwinCAT XAE; por isso, a rota para a VM deve estar configurada e conectada no XAE. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
+Abra `http://127.0.0.1:3000`. Opcionalmente, crie um arquivo `.env` (não versionado) para sobrescrever os valores padrão: `HOST`, `PORT`, `ADS_TARGET_AMS_NET_ID`, `ADS_TARGET_PORT` e `ADS_POLL_INTERVAL_MS`. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
+
+O serviço pode rodar em dois cenários:
+
+- **Node dentro da VM TwinCAT/BSD (recomendado para o autostart):** a conexão ADS é local (mesma máquina); não há rota nem TwinCAT XAE no meio. O `.env` deve usar o AMS Net ID da própria VM e `HOST=0.0.0.0` para a IHM ser acessível pelo host Windows.
+- **Node no host Windows:** usa o roteador ADS local do TwinCAT XAE; a rota para a VM precisa estar configurada e conectada no XAE.
 
 A variável `ADS_POLL_INTERVAL_MS` (padrão `200`) define o intervalo de leitura do PLC. Ela **precisa ser bem menor que a menor etapa do ciclo** (`step1 = 460 ms`); com o valor antigo de `1000 ms` a IHM recebia o estado com até 1 s de atraso, a esteira saía de sincronia e a garrafa "saltava" até S1 a cada poucos ciclos.
 
@@ -81,3 +86,59 @@ Regra: o cilindro da AT só desce com a garrafa presente em S2 **e** a esteira p
 1. **PLC (`MAIN.st`)**: `GVL_HMI.bAtInterlock := bSensorS2 AND bBeltStopped` e a AT (`GVL_HMI.bAtOn`) só desce com `bRunning AND bAtInterlock AND NOT bCapped`. A tampagem conclui em `T#1S200MS` (antes do envase, de 2 s): o cilindro sobe e a AT aguarda a próxima parada.
 2. **Ponte Node (`server.js`)**: antes de publicar, a ponte nunca envia `atOn = true` sem `sensorS2 = true`. A tentativa é exposta em `atBlocked` e registrada no log.
 3. **IHM (`IHM/js/app.js`)**: a classe `.aplicando` faz o cilindro descer sobre a garrafa alinhada em S2; o sensor S2 acende quando há garrafa presente.
+
+### Inicialização automática (autostart)
+
+Cenário recomendado: **Node dentro da VM TwinCAT/BSD**, de modo que a IHM acompanhe o ciclo de vida da máquina — ao ligar a VM, a ponte sobe sozinha e a aplicação fica pronta assim que o PLC estiver em `Run`.
+
+**Forma rápida — um comando só (do Windows):**
+
+```powershell
+pwsh -File deploy\windows\bootstrap-vm.ps1
+# opcional: -VmHost 192.168.56.174 -User Administrator -AppDir /opt/linha-envase
+```
+
+O script envia o projeto por `scp` (sem `node_modules`, `.git`, `logs`, `.env`) e roda o bootstrap na VM (`pkg install node` + `install.sh`). Prerequisito: a VM ter internet — se usar só adaptador *Host-Only*, adicione um 2º adaptador **NAT** no VirtualBox antes de rodar.
+
+**Passos manuais na VM (como root; no TC/BSD use `doas`):**
+
+```sh
+# 1) copie o projeto, ex.: scp do Windows para ~ e mova para /opt
+doas pkg install node       # Node.js + npm (confirmado node-24.x no repo TCBSD)
+doas mv ~/linha-envase /opt/linha-envase
+# 2) um script faz o resto (Node -> copia -> install):
+doas APP_DIR=/opt/linha-envase sh /opt/linha-envase/deploy/bsd/bootstrap.sh
+```
+
+Para quem já copiou o projeto, `bootstrap.sh` apenas instala o Node (se faltar), copia para `APP_DIR` e chama o `install.sh`. O `install.sh` instala dependências, cria o `.env` a partir de `env.example` (revise `ADS_TARGET_AMS_NET_ID` com o AMS Net ID da própria VM e mantenha `HOST=0.0.0.0`), instala o serviço `linha_envase`, habilita (`enable=YES`) e inicia. Ele usa `daemon -r` (reinicia se cair) e grava em `/var/log/linha_envase.log`.
+
+```sh
+service linha_envase status
+tail -f /var/log/linha_envase.log
+```
+
+Abra a IHM no host Windows em `http://<ip-da-vm>:3000`. Como a conexão ADS é local, não há rota nem XAE envolvidos — o autostart do boot project que você já configurou é suficiente.
+
+**Notas do TwinCAT/BSD (importante):**
+
+- **Firewall (`pf`):** o TC/BSD bloqueia a porta ADS **não criptografada 48898** para conexões externas por padrão; só o **Secure ADS (8016)** fica aberto. O `ads-client` (2.2.x) usa apenas ADS simples (48898). No cenário B a conexão é local (loopback) e normalmente passa; se o log acusar falha, rode o script que libera a porta e reinicia o serviço:
+
+  ```sh
+  doas sh /opt/linha-envase/deploy/bsd/fix-ads.sh
+  ```
+
+  (equivale a adicionar `pass in quick proto tcp to port 48898 synproxy state` em `/etc/pf.conf` e recarregar com `doas pfctl -f /etc/pf.conf`).
+
+- **Internet na VM:** se a VM usa apenas adaptador *Host-Only*, ela não tem internet e o `pkg install` falha. Adicione um segundo adaptador em modo **NAT** (VirtualBox → Configurações → Rede → Adaptador 2 → NAT), instale o Node e, se quiser, remova depois.
+- **Node:** disponível no repositório Beckhoff (`doas pkg install node`, confirmado `node-24.x`).
+
+**Alternativa — Node no host Windows (roteador ADS do XAE, destino remoto):**
+
+```powershell
+pwsh -File deploy\windows\install-autostart.ps1                     # SYSTEM, no boot
+pwsh -File deploy\windows\install-autostart.ps1 -Trigger AtLogOn    # usuario atual, no logon
+```
+
+O launcher (`deploy/windows/run-server.ps1`) mantém o processo vivo (reinicia se cair) e grava em `logs\server.log`. Remova com `deploy\windows\uninstall-autostart.ps1`. No modo `AtStartup` (SYSTEM) o projeto **não pode** ficar em pasta sincronizada do OneDrive; copie para algo como `C:\linha-envase`. Nesse cenário o `.env` aponta para o AMS Net ID da VM e a rota Windows ↔ BSD precisa estar ativa no XAE.
+
+Em ambos os casos a ponte já reconecta sozinha via ADS; os scripts apenas garantem que o processo esteja no ar desde o boot.

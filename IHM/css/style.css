@@ -351,6 +351,32 @@ h2{
     opacity:0.55;
 }
 
+.overlayFalhaComunicacao{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(0,0,0,0.75);
+    z-index:1000;
+}
+
+.overlayFalhaComunicacao p{
+    margin:0;
+    padding:0 20px;
+    font-family:Arial, sans-serif;
+    /* Proporcional a tela: ~25px em 1280x720, escala com a menor dimensao
+       (largura ou altura) entre 16px e 48px. */
+    font-size:clamp(16px, min(2vw, 4vh), 48px);
+    font-weight:bold;
+    color:#ffbf00;
+    text-align:center;
+}
+
+.overlayFalhaComunicacao[hidden]{
+    display:none;
+}
+
 @media (max-width:600px){
     body{
         padding-left:6px;
