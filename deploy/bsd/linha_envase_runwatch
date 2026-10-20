@@ -1,0 +1,62 @@
+#!/bin/sh
+#
+# PROVIDE: linha_envase_runwatch
+# REQUIRE: TcSystemService NETWORKING
+# BEFORE: linha_envase
+# KEYWORD: shutdown
+#
+# Garante o TwinCAT em RUN apos o boot, em segundo plano (ver ensure-run.sh).
+#
+# Ajuste em /etc/rc.conf:
+#   linha_envase_runwatch_enable="YES"
+#   (opcional) linha_envase_runwatch_script="/usr/local/libexec/linha-envase-ensure-run.sh"
+
+# shellcheck source=/dev/null
+. /etc/rc.subr
+
+name="linha_envase_runwatch"
+rcvar="linha_envase_runwatch_enable"
+start_cmd="linha_envase_runwatch_start"
+stop_cmd="linha_envase_runwatch_stop"
+status_cmd="linha_envase_runwatch_status"
+pidfile="/var/run/${name}.pid"
+
+load_rc_config "$name"
+
+: "${linha_envase_runwatch_enable:="NO"}"
+: "${linha_envase_runwatch_script:="/usr/local/libexec/linha-envase-ensure-run.sh"}"
+
+linha_envase_runwatch_start()
+{
+    if [ ! -x "${linha_envase_runwatch_script}" ]; then
+        err 1 "${name}: ${linha_envase_runwatch_script} nao encontrado ou sem permissao de execucao"
+    fi
+    echo "Starting ${name}."
+    # Sem -f: o daemon desanexa e o boot NAO fica preso esperando o helper.
+    /usr/sbin/daemon -p "${pidfile}" "${linha_envase_runwatch_script}"
+}
+
+linha_envase_runwatch_stop()
+{
+    _pid=""
+    [ -f "${pidfile}" ] && _pid=$(cat "${pidfile}" 2>/dev/null)
+    if [ -n "${_pid}" ] && kill -0 "${_pid}" 2>/dev/null; then
+        echo "Stopping ${name}."
+        kill -TERM "${_pid}" 2>/dev/null
+    fi
+    rm -f "${pidfile}"
+}
+
+linha_envase_runwatch_status()
+{
+    _pid=""
+    [ -f "${pidfile}" ] && _pid=$(cat "${pidfile}" 2>/dev/null)
+    if [ -n "${_pid}" ] && kill -0 "${_pid}" 2>/dev/null; then
+        echo "${name} is running as pid ${_pid}."
+        return 0
+    fi
+    echo "${name} is not running (oneshot: ja concluiu ou aguarda o proximo boot)."
+    return 1
+}
+
+run_rc_command "$1"

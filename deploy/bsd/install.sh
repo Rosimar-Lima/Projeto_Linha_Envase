@@ -60,8 +60,15 @@ sysrc linha_envase_dir="${APP_DIR}"
 sysrc linha_envase_node="${NODE_BIN}"
 sysrc linha_envase_user="${RUN_USER}"
 
+# Recuperacao de RUN no boot: se o TwinCAT subir em CONFIG (timeout de boot),
+# um script em segundo plano pede --run e, se preciso, reinicia o TcSystemService.
+install -m 0755 "${SCRIPT_DIR}/ensure-run.sh" /usr/local/libexec/linha-envase-ensure-run.sh
+install -m 0755 "${SCRIPT_DIR}/linha_envase_runwatch" /usr/local/etc/rc.d/linha_envase_runwatch
+sysrc linha_envase_runwatch_enable="YES"
+
 service linha_envase restart
 
 echo "Servico linha_envase habilitado e iniciado."
 echo "Status: service linha_envase status"
 echo "Log   : tail -f /var/log/linha_envase.log"
+echo "RUN no boot: service linha_envase_runwatch status (log /var/log/linha-envase-ensure-run.log)"

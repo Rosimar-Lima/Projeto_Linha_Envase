@@ -1,3 +1,9 @@
 node_modules/
 .env
 logs/
+
+# Arquivos gerados pelo autostart do host (caminhos da maquina)
+deploy/host/ensure-watcher.vbs
+deploy/host/start-watcher.vbs
+deploy/host/.kiosk-profile/
+deploy/host/watch-vm.log

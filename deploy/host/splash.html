@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciando — Linha de Envase</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 28px;
+            font-family: "Segoe UI", system-ui, sans-serif;
+            background: radial-gradient(circle at 50% 20%, #123 0%, #0a1018 55%, #05080d 100%);
+            color: #e8eef5;
+            padding: 5vh 6vw;
+            overflow: hidden;
+        }
+
+        .brand {
+            text-align: center;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: clamp(28px, 4.2vw, 54px);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .brand p {
+            margin: 10px 0 0;
+            font-size: clamp(14px, 1.6vw, 20px);
+            color: #8fa6bd;
+        }
+
+        .progressWrap {
+            width: min(720px, 90vw);
+        }
+
+        .bar {
+            position: relative;
+            height: 18px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .barFill {
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #1d6fd6, #34c6ff);
+            box-shadow: 0 0 18px rgba(52, 198, 255, 0.55);
+        }
+
+        .barFill.indeterminate {
+            background: linear-gradient(90deg, #1d6fd6, #34c6ff, #1d6fd6);
+            background-size: 200% 100%;
+            animation: slide 1.2s linear infinite;
+        }
+
+        @keyframes slide {
+            from {
+                background-position: 0% 0;
+            }
+
+            to {
+                background-position: -200% 0;
+            }
+        }
+
+        .percent {
+            margin-top: 12px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-size: clamp(16px, 2vw, 24px);
+            color: #cfe1f2;
+        }
+
+        .steps {
+            width: min(720px, 90vw);
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .step {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-size: clamp(15px, 1.7vw, 21px);
+            color: #7d93a9;
+            transition: color 0.3s ease;
+        }
+
+        .step .marker {
+            flex: 0 0 auto;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 2px solid #3a4a5c;
+            display: grid;
+            place-items: center;
+            font-size: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            color: #eaf3fb;
+        }
+
+        .step.active .marker {
+            border-color: #34c6ff;
+            box-shadow: 0 0 0 4px rgba(52, 198, 255, 0.15);
+            animation: pulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            50% {
+                box-shadow: 0 0 0 9px rgba(52, 198, 255, 0.05);
+            }
+        }
+
+        .step.done {
+            color: #9fe0b0;
+        }
+
+        .step.done .marker {
+            border-color: #33c46f;
+            background: #33c46f;
+            color: #05210f;
+        }
+
+        .step.warn {
+            color: #ffd98a;
+        }
+
+        .step.warn .marker {
+            border-color: #f5c542;
+            background: #f5c542;
+            color: #2a1f00;
+        }
+
+        .step.error {
+            color: #ffb3b3;
+        }
+
+        .step.error .marker {
+            border-color: #e05555;
+            background: #e05555;
+            color: #2a0505;
+        }
+
+        .step .hint {
+            font-size: 0.8em;
+            color: #8fa6bd;
+        }
+
+        .footer {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            font-size: clamp(12px, 1.3vw, 15px);
+            color: #6f88a0;
+        }
+
+        .light {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e05555;
+            box-shadow: 0 0 10px rgba(224, 85, 85, 0.7);
+            transition: all 0.3s ease;
+        }
+
+        .light.ok {
+            background: #33c46f;
+            box-shadow: 0 0 10px rgba(51, 196, 111, 0.8);
+        }
+
+        .light.wait {
+            background: #f5c542;
+            box-shadow: 0 0 10px rgba(245, 197, 66, 0.8);
+        }
+
+        button.retry {
+            appearance: none;
+            border: 1px solid #3a4a5c;
+            background: rgba(255, 255, 255, 0.05);
+            color: #cfe1f2;
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        button.retry:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="brand">
+        <h1>Linha de Envase</h1>
+        <p id="subtitle">Inicializando o sistema…</p>
+    </div>
+
+    <div class="progressWrap">
+        <div class="bar">
+            <div id="barFill" class="barFill indeterminate"></div>
+        </div>
+        <div id="percent" class="percent">0%</div>
+    </div>
+
+    <ul class="steps" id="steps">
+        <li class="step" data-step="vm"><span class="marker">•</span><span>Máquina virtual (TwinCAT/BSD) no ar</span></li>
+        <li class="step" data-step="ihm"><span class="marker">•</span><span>Serviço da IHM e ponte ADS</span></li>
+        <li class="step" data-step="runtime"><span class="marker">•</span><span>TwinCAT Runtime em execução</span></li>
+        <li class="step" data-step="plc"><span class="marker">•</span><span>Comunicação com o PLC</span></li>
+    </ul>
+
+    <div class="footer">
+        <span class="light wait" id="light"></span>
+        <span id="statusText">Procurando o sistema…</span>
+        <span id="elapsed"></span>
+        <button class="retry" id="retryBtn">Repetir</button>
+    </div>
+
+    <script>
+        // Ajuste aqui, se precisar, o endereço da IHM/ponte ADS na VM.
+        const VM_HOST = "192.168.56.174";
+        const VM_PORT = 3000;
+        const IHM_URL = `http://${VM_HOST}:${VM_PORT}`;
+        const WS_URL = `ws://${VM_HOST}:${VM_PORT}`;
+
+        // Cada etapa so conclui quando o SINAL REAL aparece E o tempo minimo
+        // passou. Assim a barra reflete o carregamento de fato (e nunca "voa"
+        // quando o sistema ja esta pronto antes da splash abrir).
+        const stages = [
+            { key: "vm", minMs: 2200, wait: "aguardando a VM responder…" },
+            { key: "ihm", minMs: 1800, wait: "conectando à ponte ADS…" },
+            { key: "runtime", minMs: 1600, wait: "aguardando o runtime em Run…" },
+            { key: "plc", minMs: 1200, wait: "validando a comunicação…" }
+        ];
+        const SLICE = 100 / stages.length;
+        const conditions = { vm: false, ihm: false, runtime: false, plc: false };
+
+        const elements = {
+            barFill: document.getElementById("barFill"),
+            percent: document.getElementById("percent"),
+            subtitle: document.getElementById("subtitle"),
+            light: document.getElementById("light"),
+            statusText: document.getElementById("statusText"),
+            elapsed: document.getElementById("elapsed"),
+            retryBtn: document.getElementById("retryBtn")
+        };
+
+        let completed = 0;
+        let stageStart = performance.now();
+        let displayed = 0;
+        let connected = false;
+        let runtimeStopped = false;
+        let finished = false;
+        let socket;
+        let retryTimer;
+        const startedAt = Date.now();
+
+        const stepEl = key => document.querySelector(`[data-step="${key}"]`);
+
+        function setStep(key, state, hint) {
+            const el = stepEl(key);
+            if (!el) return;
+            el.classList.remove("active", "done", "warn", "error");
+            if (state) el.classList.add(state);
+            el.querySelector(".marker").textContent =
+                state === "done" ? "✓" : state === "error" ? "!" : state === "warn" ? "!" : "•";
+            let hintEl = el.querySelector(".hint");
+            if (hint) {
+                if (!hintEl) {
+                    hintEl = document.createElement("span");
+                    hintEl.className = "hint";
+                    el.appendChild(hintEl);
+                }
+                hintEl.textContent = ` — ${hint}`;
+            } else if (hintEl) {
+                hintEl.remove();
+            }
+        }
+
+        function refreshActiveStep() {
+            for (let i = 0; i < stages.length; i++) {
+                const key = stages[i].key;
+                if (i < completed) setStep(key, "done");
+                else if (i === completed && !finished) setStep(key, runtimeStopped && key === "runtime" ? "warn" : "active", stages[i].wait);
+                else setStep(key, null);
+            }
+        }
+
+        function finish() {
+            if (finished) return;
+            finished = true;
+            setStep("plc", "done");
+            elements.light.className = "light ok";
+            elements.statusText.textContent = "Sistema pronto";
+            elements.subtitle.textContent = "Tudo pronto. Abrindo a linha…";
+            elements.retryBtn.hidden = true;
+            setTimeout(() => {
+                if (window.location.href !== IHM_URL) window.location.replace(IHM_URL);
+            }, 900);
+        }
+
+        function tryCompleteStage() {
+            if (finished) return;
+            if (completed >= stages.length) { finish(); return; }
+            const stage = stages[completed];
+            const ok = conditions[stage.key];
+            const elapsed = performance.now() - stageStart;
+            if (ok && elapsed >= stage.minMs) {
+                completed += 1;
+                stageStart = performance.now();
+                if (completed >= stages.length) finish();
+                else refreshActiveStep();
+            }
+        }
+        setInterval(tryCompleteStage, 100);
+
+        function loop() {
+            const now = performance.now();
+            let target = completed * SLICE;
+            if (completed < stages.length) {
+                const stage = stages[completed];
+                let frac = Math.min(1, (now - stageStart) / stage.minMs);
+                // Enquanto o sinal real nao chegou, a barra estaciona em ~85%
+                // da fatia da etapa (fica perceptivel que esta aguardando).
+                if (!conditions[stage.key]) frac = Math.min(frac, 0.85);
+                target += frac * SLICE;
+            }
+            displayed += (target - displayed) * 0.06;
+            if (finished) displayed += (100 - displayed) * 0.08;
+            if (displayed > 99.6 && (finished || completed >= stages.length)) displayed = 100;
+            elements.barFill.style.width = `${displayed.toFixed(1)}%`;
+            elements.percent.textContent = `${Math.round(displayed)}%`;
+
+            const waiting = completed === 0 && !connected;
+            elements.barFill.classList.toggle("indeterminate", waiting);
+            requestAnimationFrame(loop);
+        }
+        requestAnimationFrame(loop);
+
+        function elapsedTick() {
+            const s = Math.floor((Date.now() - startedAt) / 1000);
+            const mm = String(Math.floor(s / 60)).padStart(2, "0");
+            const ss = String(s % 60).padStart(2, "0");
+            elements.elapsed.textContent = `tempo: ${mm}:${ss}`;
+        }
+        setInterval(elapsedTick, 500);
+
+        function applyState(message) {
+            if (message.runtimeState === "Run" || message.plcStatus === "ready") {
+                conditions.runtime = true;
+            }
+            if (message.plcStatus === "ready") {
+                conditions.vm = true;
+                conditions.ihm = true;
+                conditions.plc = true;
+                connected = true;
+                runtimeStopped = false;
+                elements.light.className = "light ok";
+                elements.statusText.textContent = "PLC pronto";
+            } else if (message.plcStatus === "checking") {
+                conditions.vm = true;
+                conditions.ihm = true;
+                connected = true;
+                runtimeStopped = false;
+                elements.light.className = "light wait";
+                elements.statusText.textContent = "TwinCAT online; verificando o PLC…";
+            } else if (message.plcStatus === "stopped") {
+                conditions.vm = true;
+                conditions.ihm = true;
+                connected = true;
+                runtimeStopped = true;
+                elements.light.className = "light wait";
+                elements.statusText.textContent = `Runtime em "${message.runtimeState}". Coloque o TwinCAT em Run.`;
+            } else {
+                elements.light.className = "light";
+                elements.statusText.textContent = "Sem comunicação com o PLC; tentando reconectar…";
+            }
+            refreshActiveStep();
+        }
+
+        function connect() {
+            if (finished) return;
+            elements.retryBtn.hidden = true;
+            socket = new WebSocket(WS_URL);
+
+            socket.addEventListener("open", () => {
+                connected = true;
+                conditions.vm = true;
+                conditions.ihm = true;
+                elements.light.className = "light wait";
+                elements.statusText.textContent = "Conectado ao serviço da IHM…";
+                refreshActiveStep();
+            });
+
+            socket.addEventListener("message", event => {
+                let message;
+                try { message = JSON.parse(event.data); } catch { return; }
+                if (message.type !== "state") return;
+                applyState(message);
+            });
+
+            socket.addEventListener("close", () => {
+                connected = false;
+                if (finished) return;
+                elements.light.className = "light";
+                elements.statusText.textContent = "Conexão encerrada; tentando reconectar…";
+                retryTimer = window.setTimeout(connect, 1200);
+            });
+            socket.addEventListener("error", () => socket.close());
+        }
+
+        elements.retryBtn.addEventListener("click", () => {
+            window.clearTimeout(retryTimer);
+            if (socket) socket.close();
+            connect();
+        });
+
+        refreshActiveStep();
+        connect();
+    </script>
+</body>
+
+</html>
