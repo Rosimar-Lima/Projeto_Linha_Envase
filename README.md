@@ -1,28 +1,40 @@
-# Projeto Simulador Linha de Envase
+# Projeto Linha de Envase
 
-Simulador interativo de uma **Linha de Envase**, desenvolvido como parte do Projeto Multidisciplinar Final II – 10º semestre do curso de Engenharia Mecatrônica (UFBRA).
+IHM web para uma **Linha de Envase** didática, desenvolvida como parte do Projeto Multidisciplinar Final II – 10º semestre do curso de Engenharia Mecatrônica (UFBRA).
 
-O objetivo é demonstrar conceitos de **JavaScript**, **HTML** e **CSS** aplicados ao controle de processos industriais, incluindo:
-
-- Enchimento
-- Contadores de produção
-
----
+O sistema integra uma interface web, uma ponte Node.js e um PLC TwinCAT. O PLC executa a sequência de transporte, envase e tampagem; a ponte lê os símbolos por ADS e publica o estado em tempo real para a IHM via WebSocket.
 
 ## 🧩 Funcionalidades
 
-- Simulação visual da linha de envase
-- Controle do ciclo de enchimento
-- Contador automático de unidades Envasadas e Produzidas
-- Interface simples e intuitiva para fins didáticos
-
----
+- Visualização da esteira, garrafas, sensores e estações EV/AT
+- Comandos de ligar, desligar e zerar contadores
+- Contadores de garrafas envasadas, tampadas e produção total
+- Intertravamentos de segurança em três camadas (PLC, ponte e IHM)
+- Tela de inicialização, reset da aplicação e desligamento da VM
+- Exibição das versões da aplicação e do PLC
 
 ## 🚀 Tecnologias Utilizadas
 
-- **HTML5** – Estrutura da página
-- **CSS3** – Estilização e layout
-- **JavaScript** – Lógica da simulação e controle dos elementos
+- **PLC TwinCAT/BSD** – Sequência de controle em Structured Text (`MAIN.st` e `GVL_HMI.st`)
+- **Node.js + Express** – Servidor HTTP e API WebSocket
+- **ads-client** – Leitura e escrita de símbolos TwinCAT via ADS
+- **HTML5 + CSS3** – Interface da IHM
+- **JavaScript (ES Modules)** – Estado, animação e comunicação em tempo real
+
+## 🗂️ Estrutura do projeto
+
+```text
+server.js              Entrada da ponte ADS/HTTP/WebSocket
+src/config.js          Leitura e validação de .env/plc.config.json
+src/state.js           Estado inicial, limites e intertravamentos
+IHM/index.html         Estrutura da IHM
+IHM/js/app.mjs         Comunicação, animação e eventos da IHM
+IHM/js/status.mjs      Apresentação pura dos estados da máquina
+PLC/MAIN.st            Ciclo de controle do PLC
+PLC/GVL_HMI.st         Interface de variáveis entre PLC e IHM
+deploy/                Bootstrap, serviço e autostart (BSD/Windows)
+test/                  Testes unitários com node:test
+```
 
 ## IHM conectada ao TwinCAT
 
@@ -40,12 +52,17 @@ No PowerShell, na pasta do projeto:
 
 ```powershell
 npm install
+npm test
 npm start
 ```
 
-Para desenvolvimento, use `npm run dev` (nodemon): reinicia o serviço automaticamente ao salvar `server.js` ou `.env`. Em ambos os casos, para parar aperte `Ctrl+C`.
+Para desenvolvimento, use `npm run dev` (nodemon): reinicia o serviço automaticamente ao salvar `server.js`, `src/`, `plc.config.json` ou `.env`. Para validar a sintaxe sem iniciar o servidor, use `npm run check`. Em todos os casos, para parar aperte `Ctrl+C`.
 
-Abra `http://127.0.0.1:3000`. Opcionalmente, crie um arquivo `.env` (não versionado) para sobrescrever os valores padrão: `HOST`, `PORT`, `ADS_TARGET_AMS_NET_ID`, `ADS_TARGET_PORT` e `ADS_POLL_INTERVAL_MS`. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
+Abra `http://127.0.0.1:3000`. Opcionalmente, crie um arquivo `.env` (não versionado) para sobrescrever os valores padrão: `HOST`, `PORT`, `ADS_TARGET_AMS_NET_ID`, `ADS_TARGET_PORT`, `ADS_TIMEOUT_MS`, `ADS_RECREATE_AFTER_MS`, `ADS_POLL_INTERVAL_MS` e `APP_VERSION`. Os padrões do projeto são AMS Net ID `39.90.64.65.1.1` e porta PLC `851`.
+
+### Testes
+
+`npm test` executa os testes com `node:test`, cobrindo configuração/ambiente, estado inicial, limites, intertravamentos e formatação dos estados da IHM. `npm run check` valida a sintaxe de todos os arquivos JavaScript do servidor e da IHM.
 
 O serviço pode rodar em dois cenários:
 
@@ -83,16 +100,16 @@ Os dois botões retangulares amarelos ficam à direita do reset de contadores e 
 Regra: a válvula de envase (EV) só atua se, e somente se, o sensor S1 acusar a presença da garrafa **e** a esteira estiver parada. A regra é garantida em três camadas:
 
 1. **PLC (`MAIN.st`)**: o ciclo avança por etapas (transporte inicial → S1 acusa a garrafa → esteira para e aguarda → envase → transporte). `GVL_HMI.bEvInterlock := bSensorS1 AND bBeltStopped` e a EV (`GVL_HMI.bEvOn`) só liga com `bRunning AND bEvInterlock AND NOT bFillDone`. Sem o intertravamento, a EV não abre.
-2. **Ponte Node (`server.js`)**: antes de publicar, a ponte nunca envia `evOn = true` sem `bottlePositioned = true`. A tentativa é exposta em `evBlocked` e registrada no log.
-3. **IHM (`IHM/js/app.js`)**: o enchimento só inicia com a garrafa exatamente sob a EV e, ao receber `bottlePositioned`, a garrafa é alinhada sob a válvula e a fila é congelada para manter o sincronismo. Enquanto a EV atua, a esteira fica travada. A verificação é silenciosa, sem mensagens na interface.
+2. **Ponte Node (`server.js` + `src/state.js`)**: antes de publicar, a ponte nunca envia `evOn = true` sem `bottlePositioned = true`. A tentativa é exposta em `evBlocked` e registrada no log.
+3. **IHM (`IHM/js/app.mjs`)**: o enchimento só inicia com a garrafa exatamente sob a EV e, ao receber `bottlePositioned`, a garrafa é alinhada sob a válvula e a fila é congelada para manter o sincronismo. Enquanto a EV atua, a esteira fica travada. A verificação é silenciosa, sem mensagens na interface.
 
 ### Intertravamento da AT (segurança)
 
 Regra: o cilindro da AT só desce com a garrafa presente em S2 **e** a esteira parada — a AT espelha a EV. O sensor S2 se comporta como o S1: acusa a presença enquanto a garrafa está na estação e desliga quando ela sai. A regra é garantida nas mesmas três camadas:
 
 1. **PLC (`MAIN.st`)**: `GVL_HMI.bAtInterlock := bSensorS2 AND bBeltStopped` e a AT (`GVL_HMI.bAtOn`) só desce com `bRunning AND bAtInterlock AND NOT bCapped`. A tampagem conclui em `T#1S200MS` (antes do envase, de 2 s): o cilindro sobe e a AT aguarda a próxima parada.
-2. **Ponte Node (`server.js`)**: antes de publicar, a ponte nunca envia `atOn = true` sem `sensorS2 = true`. A tentativa é exposta em `atBlocked` e registrada no log.
-3. **IHM (`IHM/js/app.js`)**: a classe `.aplicando` faz o cilindro descer sobre a garrafa alinhada em S2; o sensor S2 acende quando há garrafa presente.
+2. **Ponte Node (`server.js` + `src/state.js`)**: antes de publicar, a ponte nunca envia `atOn = true` sem `sensorS2 = true`. A tentativa é exposta em `atBlocked` e registrada no log.
+3. **IHM (`IHM/js/app.mjs`)**: a classe `.aplicando` faz o cilindro descer sobre a garrafa alinhada em S2; o sensor S2 acende quando há garrafa presente.
 
 ### Inicialização automática (autostart)
 
@@ -105,7 +122,7 @@ pwsh -File deploy\windows\bootstrap-vm.ps1
 # opcional: -VmHost 192.168.56.174 -User Administrator -AppDir /opt/linha-envase
 ```
 
-O script envia o projeto por `scp` (sem `node_modules`, `.git`, `logs`, `.env`) e roda o bootstrap na VM (`pkg install node` + `install.sh`). Prerequisito: a VM ter internet — se usar só adaptador *Host-Only*, adicione um 2º adaptador **NAT** no VirtualBox antes de rodar.
+O script envia por `scp` apenas os arquivos necessários para a VM (`server.js`, `src`, `IHM`, `PLC`, configuração e `deploy/bsd`), sem `node_modules`, `.git`, `logs`, `.env` ou o perfil do navegador do host, e roda o bootstrap na VM (`pkg install node` + `install.sh`). Prerequisito: a VM ter internet — se usar só adaptador *Host-Only*, adicione um 2º adaptador **NAT** no VirtualBox antes de rodar.
 
 **Passos manuais na VM (como root; no TC/BSD use `doas`):**
 

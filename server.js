@@ -4,70 +4,16 @@ const path = require("node:path");
 // Quando o servico sobe via daemon/Task Scheduler o cwd nao e a pasta do projeto.
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
-const fs = require("node:fs");
 const http = require("node:http");
 const { spawn } = require("node:child_process");
 const express = require("express");
 const { WebSocketServer, WebSocket } = require("ws");
 const { Client } = require("ads-client");
+const { loadConfig } = require("./src/config");
+const { clampPercent, createInitialState, resolveInterlocks } = require("./src/state");
 
-const config = {
-    host: process.env.HOST || "127.0.0.1",
-    port: Number(process.env.PORT || 3000)
-};
-
-const REQUIRED_SYMBOLS = [
-    "start", "stop", "reset", "running", "sensorS1", "sensorS2",
-    "bottlePositioned", "conveyorOn", "evOn", "atOn", "fillPercent",
-    "filled", "capped"
-];
-
-function loadPlcConfig() {
-    const filePath = path.join(__dirname, "plc.config.json");
-    let fileConfig;
-    try {
-        fileConfig = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    } catch (error) {
-        throw new Error(`Falha ao carregar plc.config.json: ${error.message}`);
-    }
-
-    const connection = fileConfig.connection || {};
-    const command = fileConfig.command || {};
-    const symbols = fileConfig.symbols || {};
-
-    const missingSymbols = REQUIRED_SYMBOLS.filter(key => typeof symbols[key] !== "string" || !symbols[key].trim());
-    if (missingSymbols.length) {
-        throw new Error(`plc.config.json sem simbolos obrigatorios: ${missingSymbols.join(", ")}`);
-    }
-    if (!connection.targetAmsNetId) {
-        throw new Error("plc.config.json sem connection.targetAmsNetId.");
-    }
-
-    return {
-        targetAmsNetId: process.env.ADS_TARGET_AMS_NET_ID || connection.targetAmsNetId,
-        targetAdsPort: Number(process.env.ADS_TARGET_PORT || connection.targetAdsPort || 851),
-        timeoutMs: Number(process.env.ADS_TIMEOUT_MS || connection.timeoutMs || 5000),
-        recreateAfterMs: Number(process.env.ADS_RECREATE_AFTER_MS || connection.recreateAfterMs || 15000),
-        // Intervalo de leitura do PLC. Precisa ser bem menor que a menor etapa do ciclo
-        // (step1 = 0,46 s) para a IHM acompanhar a esteira sem atraso perceptível.
-        pollIntervalMs: Number(process.env.ADS_POLL_INTERVAL_MS || connection.pollIntervalMs || 200),
-        pulseMs: Number(command.pulseMs || 120),
-        symbols
-    };
-}
-
-function loadAppVersion() {
-    try {
-        const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"));
-        return String(packageJson.version || "").trim();
-    } catch (error) {
-        console.warn(`Falha ao ler a versão em package.json: ${error.message}`);
-        return "";
-    }
-}
-
-const plc = loadPlcConfig();
-const APP_VERSION = (process.env.APP_VERSION || loadAppVersion()).trim();
+const { server: config, plc, appVersion: APP_VERSION } = loadConfig(__dirname);
+const COMMANDS = new Set(["start", "stop", "reset", "shutdown"]);
 
 if (!plc.symbols.plcVersion) {
     console.warn("plc.config.json sem symbols.plcVersion; a versão do PLC não será exibida.");
@@ -97,35 +43,14 @@ let lastEvBlocked = false;
 let lastAtBlocked = false;
 let plcVersion = "";
 let nextPlcVersionReadAt = 0;
-let lastState = {
-    connected: false,
-    plcReady: false,
-    plcStatus: "checking",
-    runtimeState: "Indisponível",
-    appVersion: APP_VERSION,
-    plcVersion: "",
-    running: false,
-    sensorS1: false,
-    sensorS2: false,
-    bottlePositioned: false,
-    conveyorOn: false,
-    evOn: false,
-    evBlocked: false,
-    atOn: false,
-    atBlocked: false,
-    fillPercent: 0,
-    filled: 0,
-    capped: 0,
-    total: 0,
-    canShutdown: canShutdownVm()
-};
+let lastState = createInitialState({ appVersion: APP_VERSION, canShutdown: canShutdownVm() });
 
 app.use(express.static(ihmPath, {
     setHeaders: (res, filePath) => {
         // HTML/CSS/JS sem cache: o navegador revalida a cada carregamento e o
         // Express responde 304 quando nada mudou. Isso dispensa bump manual de
         // `?v=` no index.html a cada edicao.
-        if (/\.(?:html|css|js)$/.test(filePath)) {
+        if (/\.(?:html|css|m?js)$/.test(filePath)) {
             res.setHeader("Cache-Control", "no-cache");
         }
     }
@@ -137,6 +62,19 @@ function publishState(state) {
     for (const socket of sockets.clients) {
         if (socket.readyState === WebSocket.OPEN) socket.send(message);
     }
+}
+
+function publishConnectionState(connected, plcStatus, runtimeState = lastState.runtimeState) {
+    publishState({
+        ...lastState,
+        connected,
+        plcReady: false,
+        plcStatus,
+        runtimeState,
+        running: false,
+        evBlocked: false,
+        atBlocked: false
+    });
 }
 
 async function connectAds() {
@@ -164,7 +102,7 @@ async function connectAds() {
         adsConnected = false;
         adsLostAt = Date.now();
         nextPlcVersionReadAt = 0;
-        publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false, evBlocked: false, atBlocked: false });
+        publishConnectionState(false, "offline");
         console.warn("Conexão ADS perdida; aguardando reconexão automática.");
     });
     client.on("reconnect", async () => {
@@ -173,7 +111,7 @@ async function connectAds() {
         nextAdsRetryAt = 0;
         adsLostAt = 0;
         nextPlcVersionReadAt = 0;
-        publishState({ ...lastState, connected: true, plcReady: false, plcStatus: "checking", running: false, evBlocked: false, atBlocked: false });
+        publishConnectionState(true, "checking");
         console.log(`ADS reconectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         // O PLC pode ter sido recompilado/baixado durante a queda (novo boot project).
         // Se a tabela de simbolos mudou, os offsets em cache ficam invalidos e as
@@ -192,7 +130,7 @@ async function connectAds() {
         nextAdsRetryAt = 0;
         adsLostAt = 0;
         nextPlcVersionReadAt = 0;
-        publishState({ ...lastState, connected: adsConnected, plcReady: false, plcStatus: "checking", running: false, evBlocked: false, atBlocked: false });
+        publishConnectionState(adsConnected, "checking");
         console.log(`ADS conectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         try {
             await client.cacheSymbols();
@@ -208,7 +146,7 @@ async function connectAds() {
             adsConnected = false;
         }
         nextAdsRetryAt = Date.now() + 5000;
-        publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false, evBlocked: false, atBlocked: false });
+        publishConnectionState(false, "offline");
         console.error(`ADS indisponível: ${error.message}`);
         return false;
     } finally {
@@ -237,16 +175,7 @@ async function readPlcState() {
 
         const runtime = await adsClient.readState();
         if (runtime.adsStateStr !== "Run") {
-            publishState({
-                ...lastState,
-                connected: true,
-                plcReady: false,
-                plcStatus: "stopped",
-                runtimeState: runtime.adsStateStr,
-                running: false,
-                evBlocked: false,
-                atBlocked: false
-            });
+            publishConnectionState(true, "stopped", runtime.adsStateStr);
             return;
         }
 
@@ -280,23 +209,24 @@ async function readPlcState() {
         const totalValue = Math.min(filledValue, cappedValue);
 
         const bottlePositionedValue = Boolean(bottlePositioned.value) || Boolean(bottlePositionedConfirm.value);
-        const evOnRequested = Boolean(evOn.value);
         const sensorS2Value = Boolean(sensorS2.value) || Boolean(sensorS2Confirm.value);
-        const atOnRequested = Boolean(atOn.value);
+        const {
+            evBlocked,
+            evOn: safeEvOn,
+            atBlocked,
+            atOn: safeAtOn
+        } = resolveInterlocks({
+            evOn: evOn.value,
+            bottlePositioned: bottlePositionedValue,
+            atOn: atOn.value,
+            sensorS2: sensorS2Value
+        });
 
-        // Regra de intertravamento: a EV so atua com a garrafa sob ela.
-        // A ponte nunca publica evOn=true sem bottlePositioned=true.
-        const evBlocked = evOnRequested && !bottlePositionedValue;
-        const safeEvOn = evOnRequested && bottlePositionedValue;
         if (evBlocked !== lastEvBlocked) {
             lastEvBlocked = evBlocked;
             if (evBlocked) console.warn("Intertravamento EV: pedido de envase sem garrafa posicionada; EV bloqueada.");
         }
 
-        // Regra de intertravamento da AT: o cilindro so desce com a garrafa em S2.
-        // A ponte nunca publica atOn=true sem sensorS2=true.
-        const atBlocked = atOnRequested && !sensorS2Value;
-        const safeAtOn = atOnRequested && sensorS2Value;
         if (atBlocked !== lastAtBlocked) {
             lastAtBlocked = atBlocked;
             if (atBlocked) console.warn("Intertravamento AT: pedido de tampagem sem garrafa em S2; AT bloqueada.");
@@ -318,22 +248,14 @@ async function readPlcState() {
             evBlocked,
             atOn: safeAtOn,
             atBlocked,
-            fillPercent: Math.max(0, Math.min(100, Number(fillPercent.value))),
+            fillPercent: clampPercent(fillPercent.value),
             filled: filledValue,
             capped: cappedValue,
             total: totalValue
         });
     } catch (error) {
         adsConnected = Boolean(adsClient?.connection.connected);
-        publishState({
-            ...lastState,
-            connected: adsConnected,
-            plcReady: false,
-            plcStatus: adsConnected ? "fault" : "offline",
-            running: false,
-            evBlocked: false,
-            atBlocked: false
-        });
+        publishConnectionState(adsConnected, adsConnected ? "fault" : "offline");
         console.error(`Falha ao ler o PLC: ${error.message}`);
     } finally {
         plcStateReadInProgress = false;
@@ -410,7 +332,7 @@ sockets.on("connection", socket => {
         let message;
         try {
             message = JSON.parse(data.toString());
-            if (message.type !== "command" || !["start", "stop", "reset", "shutdown"].includes(message.command)) {
+            if (message.type !== "command" || !COMMANDS.has(message.command)) {
                 throw new Error("Mensagem inválida.");
             }
             if (message.command === "shutdown") {

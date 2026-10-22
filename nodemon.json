@@ -1,5 +1,5 @@
 {
-  "watch": ["server.js", ".env"],
+  "watch": ["server.js", "src", "plc.config.json", ".env"],
   "ext": "js,json",
   "ignore": ["IHM/**", "node_modules/**"],
   "delay": 200

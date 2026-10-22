@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Um comando so, executado no Windows, para subir a IHM numa VM TwinCAT/BSD:
-      1) envia o projeto (sem node_modules/.git/logs/.env) para a VM via scp;
+      1) envia os arquivos de runtime (server.js, src, IHM, PLC, config e deploy/bsd);
       2) roda deploy/bsd/bootstrap.sh na VM (pkg install node + install.sh).
 
     Requer OpenSSH cliente (ssh/scp) no Windows (padrao no Windows 10/11).
@@ -48,15 +48,19 @@ $remoteSrc = "linha-envase-src"
 $sshOpts = @("-o", "StrictHostKeyChecking=accept-new")
 
 Write-Host "== 1/2 Enviando projeto para ${dest}:~/$remoteSrc ==" -ForegroundColor Cyan
-ssh @sshOpts $dest "rm -rf ~/$remoteSrc && mkdir -p ~/$remoteSrc"
+ssh @sshOpts $dest "rm -rf ~/$remoteSrc && mkdir -p ~/$remoteSrc/deploy"
+
+$files = @("server.js", "package.json", "package-lock.json", "plc.config.json")
+$directories = @("src", "IHM", "PLC")
+$required = @($files + $directories + "deploy/bsd")
+$missing = $required | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }
+if ($missing) { throw "Itens ausentes no projeto: $($missing -join ', ')" }
 
 Push-Location $root
 try {
-    $items = @("server.js", "package.json", "package-lock.json", "plc.config.json", "IHM", "PLC", "deploy")
-    $missing = $items | Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }
-    if ($missing) { throw "Itens ausentes no projeto: $($missing -join ', ')" }
-
-    scp @sshOpts -r @items "${dest}:$remoteSrc/"
+    scp @sshOpts @files "${dest}:$remoteSrc/"
+    scp @sshOpts -r @directories "${dest}:$remoteSrc/"
+    scp @sshOpts -r "deploy/bsd" "${dest}:$remoteSrc/deploy/"
 }
 finally {
     Pop-Location

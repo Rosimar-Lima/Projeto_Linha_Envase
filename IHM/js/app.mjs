@@ -1,3 +1,13 @@
+import {
+    clampPercent,
+    getActiveStatus,
+    getCapStatusText,
+    getEquipmentClass,
+    getFillStatusText,
+    getMachineSummary,
+    getPlcStatusPresentation
+} from "./status.mjs";
+
 const elements = {
     btnStart: document.getElementById("btnLiga"),
     btnStop: document.getElementById("btnDesliga"),
@@ -31,15 +41,16 @@ const elements = {
     shutdownMessage: document.getElementById("mensagemDesligamento")
 };
 
-const estadoRows = {};
+const statusRows = {};
 document.querySelectorAll("#painelEstados [data-estado]").forEach(row => {
-    estadoRows[row.dataset.estado] = {
+    statusRows[row.dataset.estado] = {
         dot: row.querySelector(".estadoDot"),
-        valor: row.querySelector(".estadoValor")
+        value: row.querySelector(".estadoValor")
     };
 });
 
 const LINE_WIDTH = 1200;
+const LINE_HEIGHT = 486;
 const S1_CENTER = 435;
 // A AT fica um passo de garrafa (330 px) a direita da EV: 435 + 330 = 765.
 const S2_CENTER = S1_CENTER + 330;
@@ -140,7 +151,7 @@ function setSplashMessage(message) {
 }
 
 function setSplashProgress(percent) {
-    const value = Math.max(0, Math.min(100, percent));
+    const value = clampPercent(percent);
     if (elements.splashProgress) elements.splashProgress.style.width = `${value}%`;
     if (elements.splashPercent) elements.splashPercent.textContent = `${Math.round(value)}%`;
 }
@@ -500,88 +511,56 @@ function animateLine(frameTime) {
     requestAnimationFrame(animateLine);
 }
 
-function ajustarLinhaParaTela() {
-    const escala = Math.min(1, elements.lineViewport.clientWidth / 1200);
-    elements.line.style.transform = `scale(${escala})`;
-    elements.lineViewport.style.height = `${486 * escala}px`;
+function fitLineToViewport() {
+    const scale = Math.min(1, elements.lineViewport.clientWidth / LINE_WIDTH);
+    elements.line.style.transform = `scale(${scale})`;
+    elements.lineViewport.style.height = `${LINE_HEIGHT * scale}px`;
 }
 
-function setEstado(chave, valor, classe) {
-    const row = estadoRows[chave];
+function setStatusRow(key, value, className) {
+    const row = statusRows[key];
     if (!row) return;
-    row.valor.textContent = valor;
-    row.dot.className = `estadoDot${classe ? ` ${classe}` : ""}`;
+    row.value.textContent = value;
+    row.dot.className = `estadoDot${className ? ` ${className}` : ""}`;
 }
 
-function renderEstados() {
+function renderStatusPanel() {
     const plcStatus = currentState.plcStatus || "checking";
     const plcReady = currentState.connected && currentState.plcReady;
-    const dadosDisponiveis = Boolean(plcReady);
+    const dataAvailable = Boolean(plcReady);
+    const plcPresentation = getPlcStatusPresentation(plcStatus);
 
-    let plcValor = "Verificando…";
-    let plcClasse = "aviso";
-    if (plcStatus === "ready") {
-        plcValor = "Conectado (Run)";
-        plcClasse = "ok";
-    } else if (plcStatus === "stopped") {
-        plcValor = "Conectado (Stop)";
-        plcClasse = "aviso";
-    } else if (plcStatus === "offline" || plcStatus === "fault") {
-        plcValor = "Sem comunicação";
-        plcClasse = "falha";
-    }
-    setEstado("plc", plcValor, plcClasse);
-
-    setEstado(
+    setStatusRow("plc", plcPresentation.text, plcPresentation.className);
+    setStatusRow(
         "esteira",
-        dadosDisponiveis ? (currentState.conveyorOn ? "Ligada" : "Desligada") : "—",
-        dadosDisponiveis && currentState.conveyorOn ? "ok" : ""
+        getActiveStatus(currentState.conveyorOn, dataAvailable, "Ligada", "Desligada"),
+        getEquipmentClass(currentState.conveyorOn, dataAvailable)
     );
-    setEstado(
+    setStatusRow(
         "s1",
-        dadosDisponiveis ? (currentState.sensorS1 ? "On" : "Off") : "—",
-        dadosDisponiveis && currentState.sensorS1 ? "ok" : ""
+        getActiveStatus(currentState.sensorS1, dataAvailable, "On", "Off"),
+        getEquipmentClass(currentState.sensorS1, dataAvailable)
     );
-    setEstado(
+    setStatusRow(
         "ev",
-        dadosDisponiveis ? (currentState.evOn ? "Envasando" : "Parada") : "—",
-        !dadosDisponiveis ? "" : currentState.evBlocked ? "falha" : currentState.evOn ? "ok" : ""
+        getActiveStatus(currentState.evOn, dataAvailable, "Envasando", "Parada"),
+        getEquipmentClass(currentState.evOn, dataAvailable, currentState.evBlocked)
     );
-    setEstado(
+    setStatusRow(
         "s2",
-        dadosDisponiveis ? (currentState.sensorS2 ? "On" : "Off") : "—",
-        dadosDisponiveis && currentState.sensorS2 ? "ok" : ""
+        getActiveStatus(currentState.sensorS2, dataAvailable, "On", "Off"),
+        getEquipmentClass(currentState.sensorS2, dataAvailable)
     );
-    setEstado(
+    setStatusRow(
         "at",
-        dadosDisponiveis ? (currentState.atOn ? "Tampando" : "Parada") : "—",
-        !dadosDisponiveis ? "" : currentState.atBlocked ? "falha" : currentState.atOn ? "ok" : ""
+        getActiveStatus(currentState.atOn, dataAvailable, "Tampando", "Parada"),
+        getEquipmentClass(currentState.atOn, dataAvailable, currentState.atBlocked)
     );
 
-    let resumo;
-    let resumoClasse;
-    if (plcStatus === "offline" || plcStatus === "fault") {
-        resumo = "FALHA: sem comunicação com o PLC";
-        resumoClasse = "falha";
-    } else if (currentState.evBlocked) {
-        resumo = "FALHA: intertravamento da EV";
-        resumoClasse = "falha";
-    } else if (currentState.atBlocked) {
-        resumo = "FALHA: intertravamento da AT";
-        resumoClasse = "falha";
-    } else if (plcStatus === "stopped") {
-        resumo = "ATENÇÃO: runtime em Stop";
-        resumoClasse = "aviso";
-    } else if (!plcReady || plcStatus === "checking") {
-        resumo = "Verificando comunicação…";
-        resumoClasse = "aviso";
-    } else {
-        resumo = "SISTEMA OK";
-        resumoClasse = "ok";
-    }
-    elements.estadoResumo.className = `estadoResumo ${resumoClasse}`;
-    elements.estadoResumoDot.className = `estadoDot ${resumoClasse}`;
-    elements.estadoResumoTexto.textContent = resumo;
+    const summary = getMachineSummary(currentState, plcReady);
+    elements.estadoResumo.className = `estadoResumo ${summary.className}`;
+    elements.estadoResumoDot.className = `estadoDot ${summary.className}`;
+    elements.estadoResumoTexto.textContent = summary.text;
 }
 
 function renderState() {
@@ -603,24 +582,10 @@ function renderState() {
     elements.filled.textContent = plcReady ? currentState.filled : "--";
     elements.capped.textContent = plcReady ? currentState.capped : "--";
     elements.total.textContent = plcReady ? currentState.total : "--";
-    elements.fillStatus.textContent = !plcReady
-        ? "Estado indisponível"
-        : currentState.evOn
-            ? `Dosando: ${currentState.fillPercent}%`
-            : currentState.bottlePositioned
-                ? "Garrafa posicionada"
-                : currentState.sensorS1
-                    ? "S1 detectou garrafa"
-                    : "Aguardando S1";
-    elements.capStatus.textContent = !plcReady
-        ? "Estado indisponível"
-        : currentState.atOn
-            ? "Tampando garrafa"
-            : currentState.sensorS2
-                ? "Garrafa em S2"
-                : "Aguardando garrafa";
+    elements.fillStatus.textContent = getFillStatusText(currentState, plcReady);
+    elements.capStatus.textContent = getCapStatusText(currentState, plcReady);
 
-    renderEstados();
+    renderStatusPanel();
 }
 
 function showError(message) {
@@ -669,7 +634,7 @@ function connect() {
             if (bottleAtS1) {
                 const fillActive = Boolean(message.bottlePositioned) || Boolean(message.evOn);
                 if (fillActive) {
-                    const plcPercent = Math.max(0, Math.min(100, Number(message.fillPercent) || 0));
+                    const plcPercent = clampPercent(Number(message.fillPercent) || 0);
                     if (plcPercent > bottleAtS1.fillPercent) {
                         bottleAtS1.fillPercent = plcPercent;
                     }
@@ -769,11 +734,11 @@ elements.btnReset.addEventListener("click", () => sendCommand("reset"));
 elements.btnResetApp.addEventListener("click", resetApplication);
 elements.btnShutdown.addEventListener("click", shutdownSystem);
 
-window.addEventListener("resize", ajustarLinhaParaTela);
+window.addEventListener("resize", fitLineToViewport);
 window.addEventListener("beforeunload", () => window.clearTimeout(reconnectTimer));
 
 resetBottles();
-ajustarLinhaParaTela();
+fitLineToViewport();
 renderState();
 startSplashFallback();
 runStartupStages();

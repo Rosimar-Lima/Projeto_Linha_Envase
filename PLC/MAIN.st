@@ -163,7 +163,7 @@ IF GVL_HMI.bRunning THEN
             IF tStep >= T#2S770MS THEN
                 bBeltStopped := FALSE;
                 (* A garrafa envasada acabou de chegar em S2: a AT tera o que
-                   tampgar na proxima parada da esteira. *)
+                   tampar na proxima parada da esteira. *)
                 bS2Occupied := TRUE;
                 nStep := 1;
             END_IF
