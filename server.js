@@ -56,7 +56,22 @@ function loadPlcConfig() {
     };
 }
 
+function loadAppVersion() {
+    try {
+        const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"));
+        return String(packageJson.version || "").trim();
+    } catch (error) {
+        console.warn(`Falha ao ler a versão em package.json: ${error.message}`);
+        return "";
+    }
+}
+
 const plc = loadPlcConfig();
+const APP_VERSION = (process.env.APP_VERSION || loadAppVersion()).trim();
+
+if (!plc.symbols.plcVersion) {
+    console.warn("plc.config.json sem symbols.plcVersion; a versão do PLC não será exibida.");
+}
 
 function canShutdownVm() {
     if (process.platform === "win32") return false;
@@ -80,11 +95,15 @@ let adsWriteInProgress = false;
 let adsWriteQueue = Promise.resolve();
 let lastEvBlocked = false;
 let lastAtBlocked = false;
+let plcVersion = "";
+let nextPlcVersionReadAt = 0;
 let lastState = {
     connected: false,
     plcReady: false,
     plcStatus: "checking",
     runtimeState: "Indisponível",
+    appVersion: APP_VERSION,
+    plcVersion: "",
     running: false,
     sensorS1: false,
     sensorS2: false,
@@ -144,6 +163,7 @@ async function connectAds() {
         if (adsClient !== client) return;
         adsConnected = false;
         adsLostAt = Date.now();
+        nextPlcVersionReadAt = 0;
         publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false, evBlocked: false, atBlocked: false });
         console.warn("Conexão ADS perdida; aguardando reconexão automática.");
     });
@@ -152,6 +172,7 @@ async function connectAds() {
         adsConnected = true;
         nextAdsRetryAt = 0;
         adsLostAt = 0;
+        nextPlcVersionReadAt = 0;
         publishState({ ...lastState, connected: true, plcReady: false, plcStatus: "checking", running: false, evBlocked: false, atBlocked: false });
         console.log(`ADS reconectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         // O PLC pode ter sido recompilado/baixado durante a queda (novo boot project).
@@ -170,6 +191,7 @@ async function connectAds() {
         adsConnected = Boolean(client.connection.connected);
         nextAdsRetryAt = 0;
         adsLostAt = 0;
+        nextPlcVersionReadAt = 0;
         publishState({ ...lastState, connected: adsConnected, plcReady: false, plcStatus: "checking", running: false, evBlocked: false, atBlocked: false });
         console.log(`ADS conectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         try {
@@ -194,6 +216,18 @@ async function connectAds() {
     }
 }
 
+async function refreshPlcVersion() {
+    if (!plc.symbols.plcVersion || Date.now() < nextPlcVersionReadAt) return;
+    try {
+        const version = await adsClient.readValue(plc.symbols.plcVersion);
+        plcVersion = String(version.value ?? "").replace(/\0/g, "").trim();
+    } catch (error) {
+        // Mantem a ultima versao conhecida e tenta novamente mais tarde.
+    } finally {
+        nextPlcVersionReadAt = Date.now() + 60000;
+    }
+}
+
 async function readPlcState() {
     if (plcStateReadInProgress || commandInProgress || adsWriteInProgress) return;
     plcStateReadInProgress = true;
@@ -215,6 +249,8 @@ async function readPlcState() {
             });
             return;
         }
+
+        await refreshPlcVersion();
 
         const running = await adsClient.readValue(plc.symbols.running);
         const sensorS1 = await adsClient.readValue(plc.symbols.sensorS1);
@@ -271,6 +307,8 @@ async function readPlcState() {
             plcReady: true,
             plcStatus: "ready",
             runtimeState: runtime.adsStateStr,
+            appVersion: APP_VERSION,
+            plcVersion,
             running: Boolean(running.value),
             sensorS1: Boolean(sensorS1.value),
             sensorS2: sensorS2Value,

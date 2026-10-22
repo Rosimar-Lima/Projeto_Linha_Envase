@@ -54,7 +54,7 @@ O serviço pode rodar em dois cenários:
 
 A variável `ADS_POLL_INTERVAL_MS` (padrão `200`) define o intervalo de leitura do PLC. Ela **precisa ser bem menor que a menor etapa do ciclo** (`step1 = 460 ms`); com o valor antigo de `1000 ms` a IHM recebia o estado com até 1 s de atraso, a esteira saía de sincronia e a garrafa "saltava" até S1 a cada poucos ciclos.
 
-O serviço espera os símbolos `GVL_HMI.bCmdStart`, `bCmdStop`, `bCmdReset`, `bRunning`, `bSensorS1`, `bSensorS2`, `bBottlePositioned`, `bConveyorOn`, `bEvOn`, `bAtOn`, `nFillPercent`, `nBottlesFilled` e `nBottlesCapped`. A produção total é calculada pela ponte como `min(envasadas, tampadas)`, ou seja, o número de garrafas que concluíram as duas etapas. Se o nome da GVL ou das variáveis no projeto PLC for diferente, ajuste os caminhos em `server.js`.
+O serviço espera os símbolos `GVL_HMI.bCmdStart`, `bCmdStop`, `bCmdReset`, `bRunning`, `bSensorS1`, `bSensorS2`, `bBottlePositioned`, `bConveyorOn`, `bEvOn`, `bAtOn`, `nFillPercent`, `nBottlesFilled` e `nBottlesCapped`; usa também `sPlcVersion` para exibir a versão do PLC (se ausente, mostra `—`). A produção total é calculada pela ponte como `min(envasadas, tampadas)`, ou seja, o número de garrafas que concluíram as duas etapas. Se o nome da GVL ou das variáveis no projeto PLC for diferente, ajuste os caminhos em `plc.config.json`.
 
 O estado da estação EV (válvula de envase) é publicado pelo PLC via `bEvOn` e `nFillPercent`, e a interface o reflete em tempo real. A estação AT (aplicadora de tampa) publica `bSensorS2` (garrafa presente em S2), `bAtOn` (cilindro descendo/tampando) e `nBottlesCapped` (contador de tampadas).
 
@@ -152,14 +152,16 @@ Em ambos os casos a ponte já reconecta sozinha via ADS; os scripts apenas garan
 
 **Tela de inicialização (splash):**
 
-O watcher do host (`deploy/host/watch-vm.ps1`) abre `deploy/host/splash.html` em kiosk quando a VM sobe. O rodapé mostra horário, data e versões; os valores configuráveis ficam em `deploy/host/splash.config.json`:
+O watcher do host (`deploy/host/watch-vm.ps1`) abre `deploy/host/splash.html` em kiosk quando a VM sobe. O rodapé mostra horário, data e versões. A versão da aplicação vem do campo `version` em `package.json`; a versão do PLC vem da variável `GVL_HMI.sPlcVersion`, lida por ADS. A splash e a IHM exibem os dois valores recebidos do servidor.
+
+O único valor configurável no host fica em `deploy/host/splash.config.json`:
 
 ```json
 {
-    "appVersion": "1.0.0",
-    "plcVersion": "1.0.0",
     "timeZone": ""
 }
 ```
 
 `timeZone` vazio usa o fuso do host; para fixar o horário/data exibidos, informe um nome IANA (ex.: `America/Sao_Paulo`). O watcher relê o JSON a cada subida da VM, sem precisar reinstalar a tarefa.
+
+**Controle de versões:** para a aplicação, altere `version` em `package.json` e `package-lock.json` e reinicie o serviço; para o PLC, altere `GVL_HMI.sPlcVersion` em `PLC/GVL_HMI.st` e faça o download do projeto para o runtime. O servidor relê a versão do PLC ao reconectar e, no máximo, a cada 60 segundos.

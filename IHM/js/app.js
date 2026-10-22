@@ -8,6 +8,8 @@ const elements = {
     filled: document.getElementById("contadorEnvasadas"),
     capped: document.getElementById("contadorTampadas"),
     total: document.getElementById("contadorTotal"),
+    appVersion: document.getElementById("versaoAplicacao"),
+    plcVersion: document.getElementById("versaoPlc"),
     fillStatus: document.querySelector("#statusEnvase span"),
     capStatus: document.getElementById("estadoAplicacao"),
     capper: document.getElementById("aplicadora"),
@@ -67,6 +69,8 @@ let currentState = {
     plcReady: false,
     plcStatus: "checking",
     runtimeState: "Indisponível",
+    appVersion: "",
+    plcVersion: "",
     running: false,
     sensorS1: false,
     sensorS2: false,
@@ -592,6 +596,9 @@ function renderState() {
     elements.btnReset.disabled = !plcReady || currentState.running || Boolean(pendingCommand);
     elements.btnResetApp.disabled = currentState.running || Boolean(pendingCommand) || shutdownRequested || resetSequenceActive;
     elements.btnShutdown.disabled = !connected || !currentState.canShutdown || currentState.running || Boolean(pendingCommand) || shutdownRequested || resetSequenceActive;
+
+    elements.appVersion.textContent = currentState.appVersion || "—";
+    elements.plcVersion.textContent = currentState.plcVersion || "—";
 
     elements.filled.textContent = plcReady ? currentState.filled : "--";
     elements.capped.textContent = plcReady ? currentState.capped : "--";

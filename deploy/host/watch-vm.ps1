@@ -102,7 +102,7 @@ $splashBaseUrl = ([System.Uri]$splashFull).AbsoluteUri
 $configPath = Join-Path $PSScriptRoot "splash.config.json"
 
 function Get-SplashConfig {
-    $values = [ordered]@{ appVersion = ""; plcVersion = ""; timeZone = "" }
+    $values = [ordered]@{ timeZone = "" }
     if (-not (Test-Path -LiteralPath $configPath)) { return $values }
     try {
         $fileConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
@@ -117,12 +117,11 @@ function Get-SplashConfig {
 }
 
 function Get-SplashUrl {
-    # Versoes e fuso sao lidos do JSON a cada subida da VM; a splash (file://)
-    # recebe os valores na query string, pois nao consegue ler o arquivo local.
+    # O fuso e lido do JSON a cada subida da VM; a splash (file://) recebe o
+    # valor na query string, pois nao consegue ler o arquivo local. As versoes
+    # sao fornecidas pelo servidor da IHM via WebSocket.
     $cfg = Get-SplashConfig
     $query = @(
-        "appVersion=$([uri]::EscapeDataString($cfg.appVersion))",
-        "plcVersion=$([uri]::EscapeDataString($cfg.plcVersion))",
         "timeZone=$([uri]::EscapeDataString($cfg.timeZone))",
         "_=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
     ) -join "&"

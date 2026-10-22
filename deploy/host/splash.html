@@ -257,13 +257,11 @@
         const IHM_URL = `http://${VM_HOST}:${VM_PORT}`;
         const WS_URL = `ws://${VM_HOST}:${VM_PORT}`;
 
-        // Versoes e fuso vem de deploy/host/splash.config.json. O watcher le o
-        // JSON e repassa os valores na URL, pois a splash e aberta via file://
-        // e o navegador bloqueia fetch de arquivos locais.
+        // As versoes vem do servidor da IHM pelo WebSocket. O fuso vem de
+        // deploy/host/splash.config.json, repassado na URL pelo watcher, pois
+        // a splash e aberta via file:// e nao consegue ler o arquivo local.
         const params = new URLSearchParams(window.location.search);
         const CONFIG = {
-            appVersion: (params.get("appVersion") || "").trim(),
-            plcVersion: (params.get("plcVersion") || "").trim(),
             timeZone: (params.get("timeZone") || "").trim()
         };
 
@@ -367,9 +365,6 @@
         requestAnimationFrame(loop);
 
         function setupInfo() {
-            elements.appVersion.textContent = CONFIG.appVersion || "—";
-            elements.plcVersion.textContent = CONFIG.plcVersion || "—";
-
             let zone = CONFIG.timeZone;
             if (zone) {
                 try { new Intl.DateTimeFormat("pt-BR", { timeZone: zone }); }
@@ -402,6 +397,9 @@
         setupInfo();
 
         function applyState(message) {
+            if (message.appVersion) elements.appVersion.textContent = message.appVersion;
+            if (message.plcVersion) elements.plcVersion.textContent = message.plcVersion;
+
             if (message.plcStatus === "ready") {
                 conditions.vm = true;
                 conditions.runtime = true;

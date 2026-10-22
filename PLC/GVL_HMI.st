@@ -24,4 +24,8 @@ VAR_GLOBAL
     nBottlesFilled : UDINT;
     nBottlesCapped : UDINT;
     nProductionTotal : UDINT;
+
+    (* Versao do projeto PLC, lida pela IHM via ADS. Atualize este valor ao
+       publicar uma nova versao do PLC e faca o download para o runtime. *)
+    sPlcVersion : STRING(31) := '1.0.0';
 END_VAR

@@ -23,6 +23,7 @@
         "fillPercent": "GVL_HMI.nFillPercent",
         "filled": "GVL_HMI.nBottlesFilled",
         "capped": "GVL_HMI.nBottlesCapped",
-        "total": "GVL_HMI.nProductionTotal"
+        "total": "GVL_HMI.nProductionTotal",
+        "plcVersion": "GVL_HMI.sPlcVersion"
     }
 }
