@@ -98,7 +98,37 @@ if (-not (Test-Path -LiteralPath $SplashPath)) {
     throw "splash.html nao encontrado em $SplashPath"
 }
 $splashFull = (Resolve-Path -LiteralPath $SplashPath).Path
-$splashUrl = ([System.Uri]$splashFull).AbsoluteUri
+$splashBaseUrl = ([System.Uri]$splashFull).AbsoluteUri
+$configPath = Join-Path $PSScriptRoot "splash.config.json"
+
+function Get-SplashConfig {
+    $values = [ordered]@{ appVersion = ""; plcVersion = ""; timeZone = "" }
+    if (-not (Test-Path -LiteralPath $configPath)) { return $values }
+    try {
+        $fileConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        foreach ($key in @($values.Keys)) {
+            if ($null -ne $fileConfig.$key) { $values[$key] = [string]$fileConfig.$key }
+        }
+    }
+    catch {
+        Write-Log "Falha ao ler splash.config.json: $($_.Exception.Message)"
+    }
+    return $values
+}
+
+function Get-SplashUrl {
+    # Versoes e fuso sao lidos do JSON a cada subida da VM; a splash (file://)
+    # recebe os valores na query string, pois nao consegue ler o arquivo local.
+    $cfg = Get-SplashConfig
+    $query = @(
+        "appVersion=$([uri]::EscapeDataString($cfg.appVersion))",
+        "plcVersion=$([uri]::EscapeDataString($cfg.plcVersion))",
+        "timeZone=$([uri]::EscapeDataString($cfg.timeZone))",
+        "_=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    ) -join "&"
+    $separator = if ($splashBaseUrl.Contains("?")) { "&" } else { "?" }
+    return "$splashBaseUrl$separator$query"
+}
 
 if (-not (Test-Path -LiteralPath $ProfileDir)) {
     New-Item -ItemType Directory -Force -Path $ProfileDir | Out-Null
@@ -109,7 +139,8 @@ Write-Log "VM       : $VmName"
 Write-Log "VBox     : $vbox"
 Write-Log "Navegador: $browserExe"
 Write-Log "Perfil   : $ProfileDir"
-Write-Log "Splash   : $splashUrl"
+Write-Log "Splash   : $splashBaseUrl"
+Write-Log "Config   : $configPath"
 Write-Log "Kiosk    : $(-not $NoKiosk)"
 
 $browserProcess = $null
@@ -130,6 +161,7 @@ while ($true) {
         }
 
         if ($running -and -not $wasRunning) {
+            $splashUrl = Get-SplashUrl
             Write-Log "VM '$VmName' ligada; abrindo a splash."
             Stop-Kiosk
             Start-Sleep -Milliseconds 400

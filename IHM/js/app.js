@@ -2,9 +2,8 @@ const elements = {
     btnStart: document.getElementById("btnLiga"),
     btnStop: document.getElementById("btnDesliga"),
     btnReset: document.getElementById("btnReset"),
-    connectionLight: document.getElementById("indicadorConexao"),
-    connectionText: document.getElementById("textoConexao"),
-    operationText: document.getElementById("textoOperacao"),
+    btnResetApp: document.getElementById("btnResetApp"),
+    btnShutdown: document.getElementById("btnDesligar"),
     error: document.getElementById("mensagemErro"),
     filled: document.getElementById("contadorEnvasadas"),
     capped: document.getElementById("contadorTampadas"),
@@ -12,17 +11,31 @@ const elements = {
     fillStatus: document.querySelector("#statusEnvase span"),
     capStatus: document.getElementById("estadoAplicacao"),
     capper: document.getElementById("aplicadora"),
-    sensorS1: document.getElementById("sensorS1"),
-    sensorS2: document.getElementById("sensorS2"),
-    instructionsButton: document.getElementById("btnInstrucoes"),
-    instructionOptions: document.getElementById("opcoesInstrucoes"),
-    instructionPanel: document.getElementById("painelInstrucoes"),
-    instructionText: document.getElementById("textoInstrucao"),
+    sensorBulletS1: document.getElementById("bulletS1"),
+    sensorBulletS2: document.getElementById("bulletS2"),
     lineViewport: document.getElementById("linhaViewport"),
     line: document.getElementById("linha"),
     bottleContainer: document.getElementById("garrafas"),
-    commFailureOverlay: document.getElementById("overlayFalhaComunicacao")
+    commFailureOverlay: document.getElementById("overlayFalhaComunicacao"),
+    estadoResumo: document.getElementById("estadoResumo"),
+    estadoResumoDot: document.getElementById("estadoResumoDot"),
+    estadoResumoTexto: document.getElementById("estadoResumoTexto"),
+    splash: document.getElementById("splashAplicacao"),
+    splashMessage: document.getElementById("splashMensagem"),
+    splashProgress: document.getElementById("splashProgresso"),
+    splashPercent: document.getElementById("splashPercentual"),
+    splashServices: document.getElementById("splashServicos"),
+    shutdownOverlay: document.getElementById("overlayDesligamento"),
+    shutdownMessage: document.getElementById("mensagemDesligamento")
 };
+
+const estadoRows = {};
+document.querySelectorAll("#painelEstados [data-estado]").forEach(row => {
+    estadoRows[row.dataset.estado] = {
+        dot: row.querySelector(".estadoDot"),
+        valor: row.querySelector(".estadoValor")
+    };
+});
 
 const LINE_WIDTH = 1200;
 const S1_CENTER = 435;
@@ -62,10 +75,12 @@ let currentState = {
     evOn: false,
     evBlocked: false,
     atOn: false,
+    atBlocked: false,
     fillPercent: 0,
     filled: 0,
     capped: 0,
-    total: 0
+    total: 0,
+    canShutdown: false
 };
 let pendingCommand;
 let bottles = [];
@@ -78,6 +93,224 @@ let waitingForPlcStop = false;
 // Estado travado da faixa de falha de comunicacao: so limpa quando o PLC
 // confirma comunicacao (ready/stopped), evitando piscar durante reconexao.
 let commFailureActive = false;
+let shutdownRequested = false;
+let resetSequenceActive = false;
+let splashVisible = document.documentElement.classList.contains("mostrarSplash");
+let splashFinished = false;
+let splashFallbackTimer;
+let splashRunning = false;
+let splashStage = 0;
+let splashSocketOpen = false;
+let splashLatestState = { connected: false, plcReady: false };
+const SPLASH_STORAGE_KEY = "linhaEnvaseReset";
+const SPLASH_SERVICE_LABELS = {
+    interface: "Interface IHM",
+    tempoReal: "Atualização em tempo real",
+    ads: "Conexão com a ponte ADS",
+    plc: "Leitura do PLC"
+};
+const splashServiceRows = {};
+const RESET_INTRO_MS = 450;
+const RESET_DEACTIVATE_TOTAL_MS = 4800;
+const RESET_DEACTIVATE_STEP_MS = RESET_DEACTIVATE_TOTAL_MS / 4;
+const RESET_AFTER_DEACTIVATE_MS = 350;
+const RESET_BEFORE_RELOAD_MS = 300;
+const RESET_STARTUP_HOLD_MS = 120;
+const RESET_STARTUP_SEGMENT_MS = 850;
+const RESET_STARTUP_SETTLE_MS = 120;
+const RESET_DONE_MS = 600;
+
+const splashStages = [
+    { key: "interface", ready: () => true, message: "Iniciando interface IHM…", waitMessage: "" },
+    { key: "tempoReal", ready: () => splashSocketOpen, message: "Abrindo atualização em tempo real…", waitMessage: "Aguardando a conexão em tempo real…" },
+    { key: "ads", ready: () => splashLatestState.connected, message: "Conectando à ponte ADS…", waitMessage: "Aguardando a ponte ADS…" },
+    { key: "plc", ready: () => splashLatestState.plcReady, message: "Lendo o PLC…", waitMessage: "Aguardando o PLC…" }
+];
+
+function wait(milliseconds) {
+    return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+}
+
+function setSplashMessage(message) {
+    if (elements.splashMessage) elements.splashMessage.textContent = message;
+}
+
+function setSplashProgress(percent) {
+    const value = Math.max(0, Math.min(100, percent));
+    if (elements.splashProgress) elements.splashProgress.style.width = `${value}%`;
+    if (elements.splashPercent) elements.splashPercent.textContent = `${Math.round(value)}%`;
+}
+
+function animateSplashProgress(from, to, duration) {
+    return new Promise(resolve => {
+        const start = performance.now();
+        const finish = () => {
+            setSplashProgress(to);
+            resolve();
+        };
+        if (duration <= 0) {
+            finish();
+            return;
+        }
+        const frame = now => {
+            const elapsed = Math.min(now - start, duration);
+            const ratio = elapsed / duration;
+            setSplashProgress(from + (to - from) * ratio);
+            if (elapsed < duration) {
+                requestAnimationFrame(frame);
+            } else {
+                finish();
+            }
+        };
+        requestAnimationFrame(frame);
+    });
+}
+
+function setSplashPhase(phase) {
+    if (elements.splash) elements.splash.dataset.fase = phase;
+}
+
+function clearSplashServices() {
+    if (elements.splashServices) elements.splashServices.replaceChildren();
+    for (const key of Object.keys(splashServiceRows)) delete splashServiceRows[key];
+}
+
+function ensureSplashService(key) {
+    if (splashServiceRows[key]) return splashServiceRows[key];
+    if (!elements.splashServices) return null;
+
+    const row = document.createElement("li");
+    row.dataset.servico = key;
+    row.dataset.estado = "aguardando";
+
+    const name = document.createElement("span");
+    name.className = "splashServicoNome";
+    name.textContent = SPLASH_SERVICE_LABELS[key] || key;
+
+    const status = document.createElement("span");
+    status.className = "splashServicoStatus aguardando";
+    status.textContent = "Aguardando…";
+
+    row.append(name, status);
+    elements.splashServices.append(row);
+    splashServiceRows[key] = { row, status };
+    return splashServiceRows[key];
+}
+
+function setSplashService(key, text, state) {
+    const entry = ensureSplashService(key);
+    if (!entry) return;
+    entry.status.textContent = text;
+    entry.status.className = `splashServicoStatus ${state}`;
+    entry.row.dataset.estado = state;
+}
+
+function hideSplash() {
+    if (!splashVisible) return;
+    splashVisible = false;
+    window.clearTimeout(splashFallbackTimer);
+    try {
+        sessionStorage.removeItem(SPLASH_STORAGE_KEY);
+    } catch (error) { }
+    document.documentElement.classList.remove("mostrarSplash");
+}
+
+async function runResetDeactivation() {
+    const steps = [
+        { key: "interface", message: "Desativando interface IHM…" },
+        { key: "tempoReal", message: "Encerrando atualização em tempo real…" },
+        { key: "ads", message: "Desconectando a ponte ADS…" },
+        { key: "plc", message: "Interrompendo leitura do PLC…" }
+    ];
+
+    clearSplashServices();
+    setSplashPhase("desativando");
+    setSplashProgress(100);
+    setSplashMessage("Preparando reset da aplicação…");
+    await wait(RESET_INTRO_MS);
+
+    const progressAnimation = animateSplashProgress(100, 0, RESET_DEACTIVATE_TOTAL_MS);
+    for (const step of steps) {
+        setSplashMessage(step.message);
+        setSplashService(step.key, "Desativando…", "desativando");
+        await wait(RESET_DEACTIVATE_STEP_MS);
+        if (step.key === "tempoReal" && socket) {
+            try {
+                socket.close();
+            } catch (error) { }
+        }
+        setSplashService(step.key, "Desativado", "desativado");
+    }
+    await progressAnimation;
+
+    setSplashMessage("Aplicação desativada.");
+    await wait(RESET_AFTER_DEACTIVATE_MS);
+
+    for (let remaining = 3; remaining > 0; remaining--) {
+        setSplashMessage(`Aplicação desativada. Reiniciando em ${remaining}…`);
+        await wait(1000);
+    }
+
+    setSplashMessage("Reiniciando aplicação…");
+    await wait(RESET_BEFORE_RELOAD_MS);
+}
+
+async function runStartupStages() {
+    if (!splashVisible || splashFinished || splashRunning) return;
+    splashRunning = true;
+    setSplashPhase("ativando");
+
+    while (splashStage < splashStages.length) {
+        const stage = splashStages[splashStage];
+        if (!stage.ready()) {
+            setSplashMessage(stage.waitMessage);
+            splashRunning = false;
+            return;
+        }
+
+        const from = splashStage * 25;
+        const to = (splashStage + 1) * 25;
+        setSplashMessage(stage.message);
+        setSplashService(stage.key, "Iniciando…", "iniciando");
+        await wait(RESET_STARTUP_HOLD_MS);
+        await animateSplashProgress(from, to, RESET_STARTUP_SEGMENT_MS);
+        setSplashService(stage.key, "Ativo", "ativo");
+        splashStage += 1;
+        await wait(RESET_STARTUP_SETTLE_MS);
+    }
+
+    splashFinished = true;
+    splashRunning = false;
+    window.clearTimeout(splashFallbackTimer);
+    setSplashMessage("Tudo pronto. Abrindo a IHM…");
+    await wait(RESET_DONE_MS);
+    hideSplash();
+}
+
+function startSplashFallback() {
+    if (!splashVisible) return;
+    splashFallbackTimer = window.setTimeout(() => {
+        if (splashFinished) return;
+        splashFinished = true;
+        setSplashMessage("Não foi possível confirmar o PLC. Exibindo a IHM…");
+        window.setTimeout(hideSplash, 1200);
+    }, 15000);
+}
+
+if (splashVisible) {
+    clearSplashServices();
+    setSplashPhase("ativando");
+    setSplashProgress(0);
+}
+
+function showShutdownOverlay(message) {
+    if (elements.shutdownMessage) elements.shutdownMessage.textContent = message;
+    if (elements.shutdownOverlay) elements.shutdownOverlay.hidden = false;
+}
+
+function hideShutdownOverlay() {
+    if (elements.shutdownOverlay) elements.shutdownOverlay.hidden = true;
+}
 
 function updateCommFailureOverlay(plcStatus) {
     if (plcStatus === "offline" || plcStatus === "fault") {
@@ -247,18 +480,17 @@ function animateLine(frameTime) {
         previousFrameTime = undefined;
     }
 
-    // Brilho dos sensores por deteccao real: acende quando a garrafa cobre o
-    // sensor e segura ate ela sair, evitando apagar/ascender no meio do ciclo.
-    // O sinal do PLC (bSensorS1/bSensorS2) tambem mantem o sensor aceso.
+    // Bullet de cada sensor: verde quando o sensor esta ativo (sinal do PLC ou
+    // garrafa cobrindo o sensor) e cinza quando inativo.
     const plcReady = currentState.connected && currentState.plcReady;
     const sensors = [
-        { element: elements.sensorS1, center: S1_CENTER, signal: currentState.sensorS1 },
-        { element: elements.sensorS2, center: S2_CENTER, signal: currentState.sensorS2 }
+        { bullet: elements.sensorBulletS1, center: S1_CENTER, signal: currentState.sensorS1 },
+        { bullet: elements.sensorBulletS2, center: S2_CENTER, signal: currentState.sensorS2 }
     ];
     for (const sensor of sensors) {
         const detected = bottles.some(bottle =>
             bottle.position <= sensor.center && bottle.position + BOTTLE_WIDTH >= sensor.center);
-        sensor.element.classList.toggle("detectando", Boolean(plcReady) && (Boolean(sensor.signal) || detected));
+        sensor.bullet.classList.toggle("on", Boolean(plcReady) && (Boolean(sensor.signal) || detected));
     }
 
     requestAnimationFrame(animateLine);
@@ -267,42 +499,99 @@ function animateLine(frameTime) {
 function ajustarLinhaParaTela() {
     const escala = Math.min(1, elements.lineViewport.clientWidth / 1200);
     elements.line.style.transform = `scale(${escala})`;
-    elements.lineViewport.style.height = `${456 * escala}px`;
+    elements.lineViewport.style.height = `${486 * escala}px`;
+}
+
+function setEstado(chave, valor, classe) {
+    const row = estadoRows[chave];
+    if (!row) return;
+    row.valor.textContent = valor;
+    row.dot.className = `estadoDot${classe ? ` ${classe}` : ""}`;
+}
+
+function renderEstados() {
+    const plcStatus = currentState.plcStatus || "checking";
+    const plcReady = currentState.connected && currentState.plcReady;
+    const dadosDisponiveis = Boolean(plcReady);
+
+    let plcValor = "Verificando…";
+    let plcClasse = "aviso";
+    if (plcStatus === "ready") {
+        plcValor = "Conectado (Run)";
+        plcClasse = "ok";
+    } else if (plcStatus === "stopped") {
+        plcValor = "Conectado (Stop)";
+        plcClasse = "aviso";
+    } else if (plcStatus === "offline" || plcStatus === "fault") {
+        plcValor = "Sem comunicação";
+        plcClasse = "falha";
+    }
+    setEstado("plc", plcValor, plcClasse);
+
+    setEstado(
+        "esteira",
+        dadosDisponiveis ? (currentState.conveyorOn ? "Ligada" : "Desligada") : "—",
+        dadosDisponiveis && currentState.conveyorOn ? "ok" : ""
+    );
+    setEstado(
+        "s1",
+        dadosDisponiveis ? (currentState.sensorS1 ? "On" : "Off") : "—",
+        dadosDisponiveis && currentState.sensorS1 ? "ok" : ""
+    );
+    setEstado(
+        "ev",
+        dadosDisponiveis ? (currentState.evOn ? "Envasando" : "Parada") : "—",
+        !dadosDisponiveis ? "" : currentState.evBlocked ? "falha" : currentState.evOn ? "ok" : ""
+    );
+    setEstado(
+        "s2",
+        dadosDisponiveis ? (currentState.sensorS2 ? "On" : "Off") : "—",
+        dadosDisponiveis && currentState.sensorS2 ? "ok" : ""
+    );
+    setEstado(
+        "at",
+        dadosDisponiveis ? (currentState.atOn ? "Tampando" : "Parada") : "—",
+        !dadosDisponiveis ? "" : currentState.atBlocked ? "falha" : currentState.atOn ? "ok" : ""
+    );
+
+    let resumo;
+    let resumoClasse;
+    if (plcStatus === "offline" || plcStatus === "fault") {
+        resumo = "FALHA: sem comunicação com o PLC";
+        resumoClasse = "falha";
+    } else if (currentState.evBlocked) {
+        resumo = "FALHA: intertravamento da EV";
+        resumoClasse = "falha";
+    } else if (currentState.atBlocked) {
+        resumo = "FALHA: intertravamento da AT";
+        resumoClasse = "falha";
+    } else if (plcStatus === "stopped") {
+        resumo = "ATENÇÃO: runtime em Stop";
+        resumoClasse = "aviso";
+    } else if (!plcReady || plcStatus === "checking") {
+        resumo = "Verificando comunicação…";
+        resumoClasse = "aviso";
+    } else {
+        resumo = "SISTEMA OK";
+        resumoClasse = "ok";
+    }
+    elements.estadoResumo.className = `estadoResumo ${resumoClasse}`;
+    elements.estadoResumoDot.className = `estadoDot ${resumoClasse}`;
+    elements.estadoResumoTexto.textContent = resumo;
 }
 
 function renderState() {
     const connected = currentState.connected;
     const plcReady = connected && currentState.plcReady;
-    const running = plcReady && currentState.running;
     const plcStatus = currentState.plcStatus || (plcReady ? "ready" : "checking");
     updateCommFailureOverlay(plcStatus);
     elements.capper.classList.toggle("aplicando", plcReady && currentState.atOn);
-    elements.connectionLight.classList.toggle("conectado", plcReady);
-    elements.connectionLight.classList.toggle("aguardando", ["checking", "stopped"].includes(plcStatus));
-    elements.connectionLight.classList.toggle("desconectado", ["offline", "fault"].includes(plcStatus));
-
-    const connectionMessages = {
-        checking: "Verificando comunicação com o PLC...",
-        offline: "Sem comunicação com o PLC; tentando reconectar...",
-        fault: "Falha no teste de comunicação do PLC",
-        stopped: `PLC conectado; runtime em ${currentState.runtimeState}`,
-        ready: "PLC pronto para operação"
-    };
-    elements.connectionText.textContent = connectionMessages[plcStatus] || connectionMessages.checking;
-
-    if (plcStatus === "ready") {
-        elements.operationText.textContent = running ? "Linha em operação" : "Pronto para iniciar";
-    } else if (plcStatus === "checking") {
-        elements.operationText.textContent = "Autoteste de comunicação em andamento";
-    } else if (plcStatus === "stopped") {
-        elements.operationText.textContent = "Operação bloqueada: coloque o runtime em Run";
-    } else {
-        elements.operationText.textContent = "Operação bloqueada: comunicação indisponível";
-    }
 
     elements.btnStart.disabled = !plcReady || currentState.running || Boolean(pendingCommand);
     elements.btnStop.disabled = !plcReady || !currentState.running || Boolean(pendingCommand);
     elements.btnReset.disabled = !plcReady || currentState.running || Boolean(pendingCommand);
+    elements.btnResetApp.disabled = currentState.running || Boolean(pendingCommand) || shutdownRequested || resetSequenceActive;
+    elements.btnShutdown.disabled = !connected || !currentState.canShutdown || currentState.running || Boolean(pendingCommand) || shutdownRequested || resetSequenceActive;
 
     elements.filled.textContent = plcReady ? currentState.filled : "--";
     elements.capped.textContent = plcReady ? currentState.capped : "--";
@@ -323,6 +612,8 @@ function renderState() {
             : currentState.sensorS2
                 ? "Garrafa em S2"
                 : "Aguardando garrafa";
+
+    renderEstados();
 }
 
 function showError(message) {
@@ -339,7 +630,11 @@ function connect() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     socket = new WebSocket(`${protocol}//${window.location.host}`);
 
-    socket.addEventListener("open", clearError);
+    socket.addEventListener("open", () => {
+        splashSocketOpen = true;
+        clearError();
+        runStartupStages();
+    });
     socket.addEventListener("message", event => {
         const { type, ...message } = JSON.parse(event.data);
         if (type === "state") {
@@ -377,24 +672,42 @@ function connect() {
             }
 
             renderState();
+            splashLatestState = message;
+            runStartupStages();
         } else if (type === "commandResult") {
             pendingCommand = undefined;
             clearError();
             if (message.command === "reset") resetBottles();
+            if (message.command === "shutdown") {
+                showShutdownOverlay("Sistema desligando. Aguarde o encerramento da VM.");
+                return;
+            }
             renderState();
         } else if (type === "error") {
             pendingCommand = undefined;
+            shutdownRequested = false;
+            hideShutdownOverlay();
             showError(message.message);
             renderState();
         }
     });
     socket.addEventListener("close", () => {
+        if (resetSequenceActive) return;
+        splashSocketOpen = false;
+        if (splashVisible && !splashFinished) {
+            setSplashMessage("Reconectando à IHM…");
+        }
+        if (shutdownRequested) {
+            showShutdownOverlay("Conexão encerrada. A VM está desligando…");
+        }
         currentState = {
             ...currentState,
             connected: false,
             plcReady: false,
             plcStatus: "offline",
-            running: false
+            running: false,
+            evBlocked: false,
+            atBlocked: false
         };
         pendingCommand = undefined;
         renderState();
@@ -415,32 +728,39 @@ function sendCommand(command) {
     socket.send(JSON.stringify({ type: "command", command }));
 }
 
+async function resetApplication() {
+    if (currentState.running || pendingCommand || shutdownRequested || resetSequenceActive) return;
+    resetSequenceActive = true;
+    renderState();
+    document.documentElement.classList.add("mostrarSplash");
+    await runResetDeactivation();
+    try {
+        sessionStorage.setItem(SPLASH_STORAGE_KEY, "1");
+    } catch (error) { }
+    window.location.reload();
+}
+
+function shutdownSystem() {
+    if (!currentState.connected || !currentState.canShutdown || currentState.running || pendingCommand || shutdownRequested) return;
+    if (!window.confirm("Desligar a VM? A IHM e o PLC serão encerrados.")) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        showError("A comunicação com o servidor não está disponível.");
+        return;
+    }
+
+    shutdownRequested = true;
+    pendingCommand = "shutdown";
+    clearError();
+    showShutdownOverlay("Enviando comando de desligamento…");
+    renderState();
+    socket.send(JSON.stringify({ type: "command", command: "shutdown" }));
+}
+
 elements.btnStart.addEventListener("click", () => sendCommand("start"));
 elements.btnStop.addEventListener("click", () => sendCommand("stop"));
 elements.btnReset.addEventListener("click", () => sendCommand("reset"));
-
-elements.instructionsButton.addEventListener("click", () => {
-    const aberto = !elements.instructionOptions.hidden;
-    elements.instructionOptions.hidden = aberto;
-    elements.instructionPanel.hidden = aberto;
-    if (aberto) elements.instructionText.textContent = "";
-    elements.instructionsButton.setAttribute("aria-expanded", String(!aberto));
-});
-
-document.getElementById("instrucaoOn").addEventListener("click", () => {
-    elements.instructionText.textContent = "On: envia o comando de partida ao PLC.";
-    elements.instructionPanel.hidden = false;
-});
-
-document.getElementById("instrucaoOff").addEventListener("click", () => {
-    elements.instructionText.textContent = "Off: envia o comando de parada ao PLC.";
-    elements.instructionPanel.hidden = false;
-});
-
-document.getElementById("instrucaoReset").addEventListener("click", () => {
-    elements.instructionText.textContent = "Reset: com a linha parada, solicita ao PLC que zere os contadores.";
-    elements.instructionPanel.hidden = false;
-});
+elements.btnResetApp.addEventListener("click", resetApplication);
+elements.btnShutdown.addEventListener("click", shutdownSystem);
 
 window.addEventListener("resize", ajustarLinhaParaTela);
 window.addEventListener("beforeunload", () => window.clearTimeout(reconnectTimer));
@@ -448,5 +768,7 @@ window.addEventListener("beforeunload", () => window.clearTimeout(reconnectTimer
 resetBottles();
 ajustarLinhaParaTela();
 renderState();
+startSplashFallback();
+runStartupStages();
 requestAnimationFrame(animateLine);
 connect();

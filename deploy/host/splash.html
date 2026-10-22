@@ -172,51 +172,41 @@
             color: #2a0505;
         }
 
-        .step .hint {
-            font-size: 0.8em;
-            color: #8fa6bd;
+        .info {
+            width: min(720px, 90vw);
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            padding-top: 22px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
         }
 
-        .footer {
+        .infoItem {
             display: flex;
-            gap: 20px;
-            align-items: center;
-            font-size: clamp(12px, 1.3vw, 15px);
+            flex-direction: column;
+            gap: 5px;
+            min-width: 0;
+        }
+
+        .infoItem .label {
+            font-size: clamp(10px, 1.05vw, 13px);
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
             color: #6f88a0;
         }
 
-        .light {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #e05555;
-            box-shadow: 0 0 10px rgba(224, 85, 85, 0.7);
-            transition: all 0.3s ease;
-        }
-
-        .light.ok {
-            background: #33c46f;
-            box-shadow: 0 0 10px rgba(51, 196, 111, 0.8);
-        }
-
-        .light.wait {
-            background: #f5c542;
-            box-shadow: 0 0 10px rgba(245, 197, 66, 0.8);
-        }
-
-        button.retry {
-            appearance: none;
-            border: 1px solid #3a4a5c;
-            background: rgba(255, 255, 255, 0.05);
+        .infoItem .value {
+            font-size: clamp(14px, 1.5vw, 18px);
             color: #cfe1f2;
-            padding: 8px 18px;
-            border-radius: 8px;
-            font-size: 14px;
-            cursor: pointer;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
         }
 
-        button.retry:hover {
-            background: rgba(255, 255, 255, 0.12);
+        @media (max-width: 720px) {
+            .info {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
     </style>
 </head>
@@ -235,17 +225,29 @@
     </div>
 
     <ul class="steps" id="steps">
-        <li class="step" data-step="vm"><span class="marker">•</span><span>Máquina virtual (TwinCAT/BSD) no ar</span></li>
-        <li class="step" data-step="ihm"><span class="marker">•</span><span>Serviço da IHM e ponte ADS</span></li>
+        <li class="step" data-step="vm"><span class="marker">•</span><span>Máquina virtual (TwinCAT/BSD) iniciando</span></li>
         <li class="step" data-step="runtime"><span class="marker">•</span><span>TwinCAT Runtime em execução</span></li>
-        <li class="step" data-step="plc"><span class="marker">•</span><span>Comunicação com o PLC</span></li>
+        <li class="step" data-step="plc"><span class="marker">•</span><span>Comunicação com o PLC estabelecida</span></li>
+        <li class="step" data-step="ihm"><span class="marker">•</span><span>Iniciando a IHM</span></li>
     </ul>
 
-    <div class="footer">
-        <span class="light wait" id="light"></span>
-        <span id="statusText">Procurando o sistema…</span>
-        <span id="elapsed"></span>
-        <button class="retry" id="retryBtn">Repetir</button>
+    <div class="info">
+        <div class="infoItem">
+            <span class="label">Horário do sistema</span>
+            <span class="value" id="clock">--:--:--</span>
+        </div>
+        <div class="infoItem">
+            <span class="label">Data do sistema</span>
+            <span class="value" id="date">—</span>
+        </div>
+        <div class="infoItem">
+            <span class="label">Versão da aplicação</span>
+            <span class="value" id="appVersion">—</span>
+        </div>
+        <div class="infoItem">
+            <span class="label">Versão do PLC</span>
+            <span class="value" id="plcVersion">—</span>
+        </div>
     </div>
 
     <script>
@@ -255,26 +257,36 @@
         const IHM_URL = `http://${VM_HOST}:${VM_PORT}`;
         const WS_URL = `ws://${VM_HOST}:${VM_PORT}`;
 
+        // Versoes e fuso vem de deploy/host/splash.config.json. O watcher le o
+        // JSON e repassa os valores na URL, pois a splash e aberta via file://
+        // e o navegador bloqueia fetch de arquivos locais.
+        const params = new URLSearchParams(window.location.search);
+        const CONFIG = {
+            appVersion: (params.get("appVersion") || "").trim(),
+            plcVersion: (params.get("plcVersion") || "").trim(),
+            timeZone: (params.get("timeZone") || "").trim()
+        };
+
         // Cada etapa so conclui quando o SINAL REAL aparece E o tempo minimo
         // passou. Assim a barra reflete o carregamento de fato (e nunca "voa"
         // quando o sistema ja esta pronto antes da splash abrir).
         const stages = [
-            { key: "vm", minMs: 2200, wait: "aguardando a VM responder…" },
-            { key: "ihm", minMs: 1800, wait: "conectando à ponte ADS…" },
-            { key: "runtime", minMs: 1600, wait: "aguardando o runtime em Run…" },
-            { key: "plc", minMs: 1200, wait: "validando a comunicação…" }
+            { key: "vm", minMs: 2200 },
+            { key: "runtime", minMs: 1600 },
+            { key: "plc", minMs: 1200 },
+            { key: "ihm", minMs: 1000 }
         ];
         const SLICE = 100 / stages.length;
-        const conditions = { vm: false, ihm: false, runtime: false, plc: false };
+        const conditions = { vm: false, runtime: false, plc: false, ihm: false };
 
         const elements = {
             barFill: document.getElementById("barFill"),
             percent: document.getElementById("percent"),
             subtitle: document.getElementById("subtitle"),
-            light: document.getElementById("light"),
-            statusText: document.getElementById("statusText"),
-            elapsed: document.getElementById("elapsed"),
-            retryBtn: document.getElementById("retryBtn")
+            clock: document.getElementById("clock"),
+            date: document.getElementById("date"),
+            appVersion: document.getElementById("appVersion"),
+            plcVersion: document.getElementById("plcVersion")
         };
 
         let completed = 0;
@@ -285,35 +297,23 @@
         let finished = false;
         let socket;
         let retryTimer;
-        const startedAt = Date.now();
 
         const stepEl = key => document.querySelector(`[data-step="${key}"]`);
 
-        function setStep(key, state, hint) {
+        function setStep(key, state) {
             const el = stepEl(key);
             if (!el) return;
             el.classList.remove("active", "done", "warn", "error");
             if (state) el.classList.add(state);
             el.querySelector(".marker").textContent =
                 state === "done" ? "✓" : state === "error" ? "!" : state === "warn" ? "!" : "•";
-            let hintEl = el.querySelector(".hint");
-            if (hint) {
-                if (!hintEl) {
-                    hintEl = document.createElement("span");
-                    hintEl.className = "hint";
-                    el.appendChild(hintEl);
-                }
-                hintEl.textContent = ` — ${hint}`;
-            } else if (hintEl) {
-                hintEl.remove();
-            }
         }
 
         function refreshActiveStep() {
             for (let i = 0; i < stages.length; i++) {
                 const key = stages[i].key;
                 if (i < completed) setStep(key, "done");
-                else if (i === completed && !finished) setStep(key, runtimeStopped && key === "runtime" ? "warn" : "active", stages[i].wait);
+                else if (i === completed && !finished) setStep(key, runtimeStopped && key === "runtime" ? "warn" : "active");
                 else setStep(key, null);
             }
         }
@@ -321,11 +321,8 @@
         function finish() {
             if (finished) return;
             finished = true;
-            setStep("plc", "done");
-            elements.light.className = "light ok";
-            elements.statusText.textContent = "Sistema pronto";
+            setStep("ihm", "done");
             elements.subtitle.textContent = "Tudo pronto. Abrindo a linha…";
-            elements.retryBtn.hidden = true;
             setTimeout(() => {
                 if (window.location.href !== IHM_URL) window.location.replace(IHM_URL);
             }, 900);
@@ -369,58 +366,78 @@
         }
         requestAnimationFrame(loop);
 
-        function elapsedTick() {
-            const s = Math.floor((Date.now() - startedAt) / 1000);
-            const mm = String(Math.floor(s / 60)).padStart(2, "0");
-            const ss = String(s % 60).padStart(2, "0");
-            elements.elapsed.textContent = `tempo: ${mm}:${ss}`;
+        function setupInfo() {
+            elements.appVersion.textContent = CONFIG.appVersion || "—";
+            elements.plcVersion.textContent = CONFIG.plcVersion || "—";
+
+            let zone = CONFIG.timeZone;
+            if (zone) {
+                try { new Intl.DateTimeFormat("pt-BR", { timeZone: zone }); }
+                catch { zone = ""; }
+            }
+            if (!zone) zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+            const clockFmt = new Intl.DateTimeFormat("pt-BR", {
+                timeZone: zone,
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hourCycle: "h23"
+            });
+            const dateFmt = new Intl.DateTimeFormat("pt-BR", {
+                timeZone: zone,
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric"
+            });
+
+            const tick = () => {
+                const now = new Date();
+                elements.clock.textContent = clockFmt.format(now);
+                elements.date.textContent = dateFmt.format(now);
+            };
+            tick();
+            setInterval(tick, 1000);
         }
-        setInterval(elapsedTick, 500);
+        setupInfo();
 
         function applyState(message) {
-            if (message.runtimeState === "Run" || message.plcStatus === "ready") {
-                conditions.runtime = true;
-            }
             if (message.plcStatus === "ready") {
                 conditions.vm = true;
-                conditions.ihm = true;
+                conditions.runtime = true;
                 conditions.plc = true;
-                connected = true;
-                runtimeStopped = false;
-                elements.light.className = "light ok";
-                elements.statusText.textContent = "PLC pronto";
-            } else if (message.plcStatus === "checking") {
-                conditions.vm = true;
                 conditions.ihm = true;
                 connected = true;
                 runtimeStopped = false;
-                elements.light.className = "light wait";
-                elements.statusText.textContent = "TwinCAT online; verificando o PLC…";
             } else if (message.plcStatus === "stopped") {
                 conditions.vm = true;
+                conditions.runtime = false;
+                conditions.plc = false;
                 conditions.ihm = true;
                 connected = true;
                 runtimeStopped = true;
-                elements.light.className = "light wait";
-                elements.statusText.textContent = `Runtime em "${message.runtimeState}". Coloque o TwinCAT em Run.`;
+            } else if (message.plcStatus === "checking") {
+                conditions.vm = true;
+                conditions.runtime = false;
+                conditions.plc = false;
+                conditions.ihm = true;
+                connected = true;
+                runtimeStopped = false;
             } else {
-                elements.light.className = "light";
-                elements.statusText.textContent = "Sem comunicação com o PLC; tentando reconectar…";
+                conditions.runtime = false;
+                conditions.plc = false;
             }
             refreshActiveStep();
         }
 
         function connect() {
             if (finished) return;
-            elements.retryBtn.hidden = true;
             socket = new WebSocket(WS_URL);
 
             socket.addEventListener("open", () => {
                 connected = true;
                 conditions.vm = true;
                 conditions.ihm = true;
-                elements.light.className = "light wait";
-                elements.statusText.textContent = "Conectado ao serviço da IHM…";
                 refreshActiveStep();
             });
 
@@ -434,18 +451,14 @@
             socket.addEventListener("close", () => {
                 connected = false;
                 if (finished) return;
-                elements.light.className = "light";
-                elements.statusText.textContent = "Conexão encerrada; tentando reconectar…";
+                conditions.vm = false;
+                conditions.runtime = false;
+                conditions.plc = false;
+                conditions.ihm = false;
                 retryTimer = window.setTimeout(connect, 1200);
             });
             socket.addEventListener("error", () => socket.close());
         }
-
-        elements.retryBtn.addEventListener("click", () => {
-            window.clearTimeout(retryTimer);
-            if (socket) socket.close();
-            connect();
-        });
 
         refreshActiveStep();
         connect();

@@ -54,7 +54,7 @@ O serviço pode rodar em dois cenários:
 
 A variável `ADS_POLL_INTERVAL_MS` (padrão `200`) define o intervalo de leitura do PLC. Ela **precisa ser bem menor que a menor etapa do ciclo** (`step1 = 460 ms`); com o valor antigo de `1000 ms` a IHM recebia o estado com até 1 s de atraso, a esteira saía de sincronia e a garrafa "saltava" até S1 a cada poucos ciclos.
 
-O serviço espera os símbolos `GVL_HMI.bCmdStart`, `bCmdStop`, `bCmdReset`, `bRunning`, `bSensorS1`, `bSensorS2`, `bBottlePositioned`, `bConveyorOn`, `bEvOn`, `bAtOn`, `nFillPercent`, `nBottlesFilled`, `nBottlesCapped` e `nProductionTotal`. Se o nome da GVL ou das variáveis no projeto PLC for diferente, ajuste os caminhos em `server.js`.
+O serviço espera os símbolos `GVL_HMI.bCmdStart`, `bCmdStop`, `bCmdReset`, `bRunning`, `bSensorS1`, `bSensorS2`, `bBottlePositioned`, `bConveyorOn`, `bEvOn`, `bAtOn`, `nFillPercent`, `nBottlesFilled` e `nBottlesCapped`. A produção total é calculada pela ponte como `min(envasadas, tampadas)`, ou seja, o número de garrafas que concluíram as duas etapas. Se o nome da GVL ou das variáveis no projeto PLC for diferente, ajuste os caminhos em `server.js`.
 
 O estado da estação EV (válvula de envase) é publicado pelo PLC via `bEvOn` e `nFillPercent`, e a interface o reflete em tempo real. A estação AT (aplicadora de tampa) publica `bSensorS2` (garrafa presente em S2), `bAtOn` (cilindro descendo/tampando) e `nBottlesCapped` (contador de tampadas).
 
@@ -70,6 +70,13 @@ Como as estações distam exatamente um passo de garrafa (S1 → S2 = 330 px), q
 Na primeira volta não há garrafa em S2, então a AT não atua; a partir da segunda, `bS2Occupied` fica verdadeiro e cada parada tampa a garrafa de S2.
 
 A IHM diferencia a conexão ADS do estado do runtime PLC. Os comandos ficam habilitados somente quando o runtime está em `Run`; em `Stop` ou `Config`, a interface indica que o PLC está parado e bloqueia os comandos.
+
+### Botões de sistema
+
+Os dois botões retangulares amarelos ficam à direita do reset de contadores e só habilitam com a linha parada:
+
+- **RESET APLICAÇÃO:** recarrega a IHM e exibe a tela de splash. Os serviços aparecem um a um conforme são desativados, enquanto a barra regride continuamente de 100% a 0%; há uma pausa de 3 s e depois os serviços reaparecem um a um com a barra subindo continuamente até 100% e o PLC responder. Não reinicia a VM, o serviço Node nem o PLC; portanto, a comunicação com a VM não é cortada.
+- **DESLIGAR SISTEMA:** envia `shutdown -p now` para a VM (FreeBSD), encerrando a IHM, o TwinCAT e o sistema operacional. O serviço `linha_envase` precisa rodar como `root`; no host Windows o comando é recusado para não desligar o computador errado.
 
 ### Intertravamento da EV (segurança)
 
@@ -142,3 +149,17 @@ pwsh -File deploy\windows\install-autostart.ps1 -Trigger AtLogOn    # usuario at
 O launcher (`deploy/windows/run-server.ps1`) mantém o processo vivo (reinicia se cair) e grava em `logs\server.log`. Remova com `deploy\windows\uninstall-autostart.ps1`. No modo `AtStartup` (SYSTEM) o projeto **não pode** ficar em pasta sincronizada do OneDrive; copie para algo como `C:\linha-envase`. Nesse cenário o `.env` aponta para o AMS Net ID da VM e a rota Windows ↔ BSD precisa estar ativa no XAE.
 
 Em ambos os casos a ponte já reconecta sozinha via ADS; os scripts apenas garantem que o processo esteja no ar desde o boot.
+
+**Tela de inicialização (splash):**
+
+O watcher do host (`deploy/host/watch-vm.ps1`) abre `deploy/host/splash.html` em kiosk quando a VM sobe. O rodapé mostra horário, data e versões; os valores configuráveis ficam em `deploy/host/splash.config.json`:
+
+```json
+{
+    "appVersion": "1.0.0",
+    "plcVersion": "1.0.0",
+    "timeZone": ""
+}
+```
+
+`timeZone` vazio usa o fuso do host; para fixar o horário/data exibidos, informe um nome IANA (ex.: `America/Sao_Paulo`). O watcher relê o JSON a cada subida da VM, sem precisar reinstalar a tarefa.

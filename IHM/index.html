@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Linha de Envase</title>
     <link rel="stylesheet" href="css/style.css">
+    <script>
+        try {
+            if (sessionStorage.getItem("linhaEnvaseReset") === "1") {
+                document.documentElement.classList.add("mostrarSplash");
+            }
+        } catch (error) { }
+    </script>
 
 </head>
 
@@ -13,21 +20,22 @@
 
     <h1>Linha de Envase</h1>
 
-    <div class="statusConexao" role="status" aria-live="polite">
-        <span id="indicadorConexao" class="indicadorConexao desconectado"></span>
-        <span id="textoConexao">Verificando comunicação com o PLC...</span>
-        <span class="separadorStatus">|</span>
-        <span id="textoOperacao">Autoteste de comunicação em andamento</span>
-    </div>
+    <div class="statusSpacer" aria-hidden="true"></div>
     <p id="mensagemErro" class="mensagemErro" role="alert" hidden></p>
 
     <button id="btnLiga" class="btnPainel" type="button" aria-label="Ligar linha" title="Ligar linha" disabled></button>
     <button id="btnDesliga" class="btnPainel" type="button" aria-label="Desligar linha" title="Desligar linha" disabled></button>
     <button id="btnReset" class="btnPainel" type="button" aria-label="Zerar contadores" title="Zerar contadores" disabled></button>
-
-    <h2 class="contadorProducao">Garrafas Envasadas: <span id="contadorEnvasadas">0</span></h2>
-    <h2 class="contadorProducao">Garrafas Tampadas: <span id="contadorTampadas">0</span></h2>
-    <h2 class="contadorProducao">Produção Total: <span id="contadorTotal">0</span></h2>
+    <div class="botoesSistema">
+        <button id="btnResetApp" class="btnSistema" type="button" aria-label="Reset da aplicação" title="Reiniciar a aplicação pela tela de splash (não reinicia a VM)" disabled>
+            <span>RESET</span>
+            <span>APLICAÇÃO</span>
+        </button>
+        <button id="btnDesligar" class="btnSistema" type="button" aria-label="Desligar sistema" title="Desligar a VM (encerra a IHM e o PLC)" disabled>
+            <span>DESLIGAR</span>
+            <span>SISTEMA</span>
+        </button>
+    </div>
 
     <div id="linhaViewport">
         <div id="linha">
@@ -39,6 +47,7 @@
                     </div>
                     <img class="valvulaEnvase" src="images/dosador_recuado.png" alt="Dosador recuado">
                     <img id="sensorS1" class="sensorPresenca" src="images/sensor_presenca.png" alt="Sensor de presença S1">
+                    <span id="bulletS1" class="sensorBullet" aria-hidden="true"></span>
                 </div>
 
                 <div id="aplicadora">
@@ -48,29 +57,85 @@
                     </div>
                     <img class="aplicadoraTampa" src="images/aplicadora_tampa.png" alt="Aplicadora de tampas">
                     <img id="sensorS2" class="sensorPresenca" src="images/sensor_presenca.png" alt="Sensor de presença S2">
+                    <span id="bulletS2" class="sensorBullet" aria-hidden="true"></span>
                 </div>
             </div>
             <div id="garrafas"></div>
         </div>
     </div>
 
-    <div class="instrucoesControle">
-        <button id="btnInstrucoes" class="btnInstrucoes" aria-expanded="false" aria-controls="opcoesInstrucoes">
-            Instruções
-        </button>
-        <div id="opcoesInstrucoes" class="opcoesInstrucoes" hidden>
-            <button id="instrucaoOn" type="button">On</button>
-            <button id="instrucaoOff" type="button">Off</button>
-            <button id="instrucaoReset" type="button">Reset</button>
-        </div>
-    </div>
+    <div class="painelDuplo">
+        <fieldset id="painelEstados" class="painelEstados">
+            <legend>Estados da Máquina</legend>
+            <div id="estadoResumo" class="estadoResumo">
+                <span id="estadoResumoDot" class="estadoDot"></span>
+                <span id="estadoResumoTexto">Verificando…</span>
+            </div>
+            <ul class="estadoLista">
+                <li class="estadoLinha" data-estado="plc">
+                    <span class="estadoDot"></span>
+                    <span class="estadoLabel">PLC</span>
+                    <span class="estadoValor">—</span>
+                </li>
+                <li class="estadoLinha" data-estado="esteira">
+                    <span class="estadoDot"></span>
+                    <span class="estadoLabel">Esteira</span>
+                    <span class="estadoValor">—</span>
+                </li>
+                <li class="estadoLinha" data-estado="s1">
+                    <span class="estadoDot"></span>
+                    <span class="estadoLabel">Sensor 1</span>
+                    <span class="estadoValor">—</span>
+                </li>
+                <li class="estadoLinha" data-estado="ev">
+                    <span class="estadoDot"></span>
+                    <span class="estadoLabel">Válvula EV</span>
+                    <span class="estadoValor">—</span>
+                </li>
+                <li class="estadoLinha" data-estado="s2">
+                    <span class="estadoDot"></span>
+                    <span class="estadoLabel">Sensor 2</span>
+                    <span class="estadoValor">—</span>
+                </li>
+                <li class="estadoLinha" data-estado="at">
+                    <span class="estadoDot"></span>
+                    <span class="estadoLabel">Aplicadora AT</span>
+                    <span class="estadoValor">—</span>
+                </li>
+            </ul>
+        </fieldset>
 
-    <section id="painelInstrucoes" class="painelInstrucoes" hidden>
-        <p id="textoInstrucao"></p>
-    </section>
+        <fieldset id="painelProducao" class="painelProducao">
+            <legend>Produção</legend>
+            <div class="listaProducao">
+                <h2 class="contadorProducao"><span>Garrafas Envasadas</span><span id="contadorEnvasadas">0</span></h2>
+                <h2 class="contadorProducao"><span>Garrafas Tampadas</span><span id="contadorTampadas">0</span></h2>
+                <h2 class="contadorProducao"><span>Produção Total</span><span id="contadorTotal">0</span></h2>
+            </div>
+        </fieldset>
+    </div>
 
     <div id="overlayFalhaComunicacao" class="overlayFalhaComunicacao" role="alert" hidden>
         <p>FALHA DE COMUNICAÇÃO COM O PLC</p>
+    </div>
+
+    <div id="splashAplicacao" class="splashAplicacao" role="status" aria-live="polite">
+        <div class="splashConteudo">
+            <h1>Linha de Envase</h1>
+            <p id="splashMensagem">Reiniciando aplicação…</p>
+            <div class="splashBarra" aria-hidden="true">
+                <div id="splashProgresso" class="splashProgresso"></div>
+            </div>
+            <div id="splashPercentual" class="splashPercentual">0%</div>
+            <ul id="splashServicos" class="splashServicos" aria-label="Serviços da aplicação"></ul>
+        </div>
+    </div>
+
+    <div id="overlayDesligamento" class="overlayDesligamento" role="alert" hidden>
+        <div>
+            <h2>Desligando sistema…</h2>
+            <p id="mensagemDesligamento">Aguarde o encerramento da VM.</p>
+        </div>
     </div>
 
     <script src="js/app.js"></script>

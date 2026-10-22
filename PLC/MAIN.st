@@ -137,7 +137,6 @@ IF GVL_HMI.bRunning THEN
             IF tStep >= T#2S THEN
                 GVL_HMI.nFillPercent := 100;
                 GVL_HMI.nBottlesFilled := GVL_HMI.nBottlesFilled + 1;
-                GVL_HMI.nProductionTotal := GVL_HMI.nProductionTotal + 1;
                 bFillDone := TRUE;
             ELSE
                 GVL_HMI.nFillPercent := TO_USINT(TIME_TO_DINT(tStep) / 20);
@@ -148,6 +147,8 @@ IF GVL_HMI.bRunning THEN
             IF bS2Occupied AND NOT bCapped AND tStep >= T#1S200MS THEN
                 bCapped := TRUE;
                 GVL_HMI.nBottlesCapped := GVL_HMI.nBottlesCapped + 1;
+                (* Producao total: somente garrafas que concluiram envase e tampagem. *)
+                GVL_HMI.nProductionTotal := GVL_HMI.nProductionTotal + 1;
             END_IF
 
             (* Avanca quando o envase terminou e a tampagem (se houver) concluiu *)

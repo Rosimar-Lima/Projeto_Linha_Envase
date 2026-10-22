@@ -6,6 +6,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const fs = require("node:fs");
 const http = require("node:http");
+const { spawn } = require("node:child_process");
 const express = require("express");
 const { WebSocketServer, WebSocket } = require("ws");
 const { Client } = require("ads-client");
@@ -18,7 +19,7 @@ const config = {
 const REQUIRED_SYMBOLS = [
     "start", "stop", "reset", "running", "sensorS1", "sensorS2",
     "bottlePositioned", "conveyorOn", "evOn", "atOn", "fillPercent",
-    "filled", "capped", "total"
+    "filled", "capped"
 ];
 
 function loadPlcConfig() {
@@ -57,6 +58,12 @@ function loadPlcConfig() {
 
 const plc = loadPlcConfig();
 
+function canShutdownVm() {
+    if (process.platform === "win32") return false;
+    if (typeof process.getuid === "function" && process.getuid() !== 0) return false;
+    return true;
+}
+
 const app = express();
 const server = http.createServer(app);
 const sockets = new WebSocketServer({ server });
@@ -86,10 +93,12 @@ let lastState = {
     evOn: false,
     evBlocked: false,
     atOn: false,
+    atBlocked: false,
     fillPercent: 0,
     filled: 0,
     capped: 0,
-    total: 0
+    total: 0,
+    canShutdown: canShutdownVm()
 };
 
 app.use(express.static(ihmPath, {
@@ -104,8 +113,8 @@ app.use(express.static(ihmPath, {
 }));
 
 function publishState(state) {
-    lastState = state;
-    const message = JSON.stringify({ type: "state", ...state });
+    lastState = { ...state, canShutdown: canShutdownVm() };
+    const message = JSON.stringify({ type: "state", ...lastState });
     for (const socket of sockets.clients) {
         if (socket.readyState === WebSocket.OPEN) socket.send(message);
     }
@@ -135,7 +144,7 @@ async function connectAds() {
         if (adsClient !== client) return;
         adsConnected = false;
         adsLostAt = Date.now();
-        publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false });
+        publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false, evBlocked: false, atBlocked: false });
         console.warn("Conexão ADS perdida; aguardando reconexão automática.");
     });
     client.on("reconnect", async () => {
@@ -143,7 +152,7 @@ async function connectAds() {
         adsConnected = true;
         nextAdsRetryAt = 0;
         adsLostAt = 0;
-        publishState({ ...lastState, connected: true, plcReady: false, plcStatus: "checking", running: false });
+        publishState({ ...lastState, connected: true, plcReady: false, plcStatus: "checking", running: false, evBlocked: false, atBlocked: false });
         console.log(`ADS reconectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         // O PLC pode ter sido recompilado/baixado durante a queda (novo boot project).
         // Se a tabela de simbolos mudou, os offsets em cache ficam invalidos e as
@@ -161,7 +170,7 @@ async function connectAds() {
         adsConnected = Boolean(client.connection.connected);
         nextAdsRetryAt = 0;
         adsLostAt = 0;
-        publishState({ ...lastState, connected: adsConnected, plcReady: false, plcStatus: "checking", running: false });
+        publishState({ ...lastState, connected: adsConnected, plcReady: false, plcStatus: "checking", running: false, evBlocked: false, atBlocked: false });
         console.log(`ADS conectado: ${plc.targetAmsNetId}:${plc.targetAdsPort}`);
         try {
             await client.cacheSymbols();
@@ -177,7 +186,7 @@ async function connectAds() {
             adsConnected = false;
         }
         nextAdsRetryAt = Date.now() + 5000;
-        publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false });
+        publishState({ ...lastState, connected: false, plcReady: false, plcStatus: "offline", running: false, evBlocked: false, atBlocked: false });
         console.error(`ADS indisponível: ${error.message}`);
         return false;
     } finally {
@@ -200,7 +209,9 @@ async function readPlcState() {
                 plcReady: false,
                 plcStatus: "stopped",
                 runtimeState: runtime.adsStateStr,
-                running: false
+                running: false,
+                evBlocked: false,
+                atBlocked: false
             });
             return;
         }
@@ -225,7 +236,12 @@ async function readPlcState() {
         const fillPercent = await adsClient.readValue(plc.symbols.fillPercent);
         const filled = await adsClient.readValue(plc.symbols.filled);
         const capped = await adsClient.readValue(plc.symbols.capped);
-        const total = await adsClient.readValue(plc.symbols.total);
+        const filledValue = Number(filled.value);
+        const cappedValue = Number(capped.value);
+        // Total = garrafas que concluiram envase e tampagem. Como a linha e FIFO,
+        // cada garrafa tampada ja passou pelo envase; o min tambem protege contra
+        // leituras intermediarias entre os dois contadores.
+        const totalValue = Math.min(filledValue, cappedValue);
 
         const bottlePositionedValue = Boolean(bottlePositioned.value) || Boolean(bottlePositionedConfirm.value);
         const evOnRequested = Boolean(evOn.value);
@@ -263,10 +279,11 @@ async function readPlcState() {
             evOn: safeEvOn,
             evBlocked,
             atOn: safeAtOn,
+            atBlocked,
             fillPercent: Math.max(0, Math.min(100, Number(fillPercent.value))),
-            filled: Number(filled.value),
-            capped: Number(capped.value),
-            total: Number(total.value)
+            filled: filledValue,
+            capped: cappedValue,
+            total: totalValue
         });
     } catch (error) {
         adsConnected = Boolean(adsClient?.connection.connected);
@@ -275,7 +292,9 @@ async function readPlcState() {
             connected: adsConnected,
             plcReady: false,
             plcStatus: adsConnected ? "fault" : "offline",
-            running: false
+            running: false,
+            evBlocked: false,
+            atBlocked: false
         });
         console.error(`Falha ao ler o PLC: ${error.message}`);
     } finally {
@@ -332,14 +351,35 @@ async function pulseCommand(command) {
     });
 }
 
+function shutdownVm() {
+    if (!canShutdownVm()) {
+        throw new Error("Desligamento da VM indisponível: o serviço precisa rodar como root em FreeBSD/Linux.");
+    }
+
+    const command = process.platform === "freebsd" ? "/sbin/shutdown" : "shutdown";
+    const args = process.platform === "freebsd" ? ["-p", "now"] : ["-h", "now"];
+
+    setTimeout(() => {
+        const child = spawn(command, args, { detached: true, stdio: "ignore" });
+        child.on("error", error => console.error(`Falha ao desligar a VM: ${error.message}`));
+        child.unref();
+    }, 500);
+}
+
 sockets.on("connection", socket => {
     socket.send(JSON.stringify({ type: "state", ...lastState }));
     socket.on("message", async data => {
         let message;
         try {
             message = JSON.parse(data.toString());
-            if (message.type !== "command" || !["start", "stop", "reset"].includes(message.command)) {
+            if (message.type !== "command" || !["start", "stop", "reset", "shutdown"].includes(message.command)) {
                 throw new Error("Mensagem inválida.");
+            }
+            if (message.command === "shutdown") {
+                if (lastState.running) throw new Error("Desligue a linha antes de desligar a VM.");
+                shutdownVm();
+                socket.send(JSON.stringify({ type: "commandResult", command: "shutdown" }));
+                return;
             }
             await pulseCommand(message.command);
             await readPlcState();
